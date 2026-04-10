@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>뉴픽 주간 업무 플래너</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Pretendard Variable','Apple SD Gothic Neo',sans-serif;background:#0d0d0d;color:#f0ede8;min-height:100vh}
+  input,button{font-family:inherit}
+  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:.65}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .row{animation:fadeIn .15s ease}
+  .sk{animation:pulse 1.4s ease infinite;background:#1e1e1e;border-radius:8px}
+  .sp{width:13px;height:13px;border:2px solid #333;border-top-color:#e05c1a;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block}
+  button:not([disabled]):hover{opacity:.8}
+  a{color:#60a5fa;text-decoration:none}a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ═══════════════════════════════════════════
+   설정
+═══════════════════════════════════════════ */
+const TASKS_DB  = '0de58e7636134d4382df512e18a3ab0f';
+const SCHED_DB  = '014f0605d8fb490abfb58789e7a9c30b';
+const TOKEN_KEY = 'newpick-notion-token';
+
+/* Netlify Function 프록시 — CORS 없음 */
+const API_BASE = '/.netlify/functions/proxy';
+
+const USERS = ['크리스토퍼', '켈리', '에디'];
+const UC = { '크리스토퍼':'#e05c1a', '켈리':'#ec4899', '에디':'#3b82f6' };
+
+const DAYS = [
+  {d:'월',l:'월요일',c:'#3b82f6'},{d:'화',l:'화요일',c:'#10b981'},
+  {d:'수',l:'수요일',c:'#f59e0b'},{d:'목',l:'목요일',c:'#ef4444'},
+  {d:'금',l:'금요일',c:'#a855f7'},
+];
+const SLOT_ORDER = ['오전','점심이후','오후','유동'];
+const SL = {오전:'오전',점심이후:'점심 이후 ~ 14:00',오후:'오후 전반',유동:'오후 후반 (유동)'};
+const TS = {
+  '분석':{bg:'#0f1e35',t:'#60a5fa',d:'#3b82f6'},'운영':{bg:'#0d1e18',t:'#34d399',d:'#10b981'},
+  '메타':{bg:'#0f1728',t:'#818cf8',d:'#4f46e5'},'프로모션':{bg:'#2a1300',t:'#fb923c',d:'#ea580c'},
+  '네이버':{bg:'#0d2018',t:'#4ade80',d:'#16a34a'},'브랜드':{bg:'#281a00',t:'#fbbf24',d:'#d97706'},
+  'CRM':{bg:'#2a0d0d',t:'#f87171',d:'#dc2626'},'전략':{bg:'#1a0d35',t:'#c084fc',d:'#9333ea'},
+  '보고서':{bg:'#180d35',t:'#e879f9',d:'#c026d3'},'회의':{bg:'#1a2a00',t:'#86efac',d:'#16a34a'},
+  '유동':{bg:'#181818',t:'#6b7280',d:'#4b5563'},
+};
+const US = {'긴급':{bg:'#3f1010',t:'#f87171'},'높음':{bg:'#2a1a00',t:'#fbbf24'},'보통':{bg:'#141414',t:'#6b7280'}};
+
+/* ═══════════════════════════════════════════
+   상태
+═══════════════════════════════════════════ */
+let S = {
+  token: localStorage.getItem(TOKEN_KEY) || '',
+  day: dIdx(), user: USERS[0],
+  tasks: {}, sched: {},
+  tL: false, sL: false,
+  toast: null, testing: false,
+};
+
+/* ═══════════════════════════════════════════
+   유틸
+═══════════════════════════════════════════ */
+function dIdx(){const d=new Date(Date.now()+9*36e5).getUTCDay();return d===0?4:d===6?0:d-1;}
+function wDates(){
+  const n=new Date(Date.now()+9*36e5),dow=n.getUTCDay()||7,off=1-dow;
+  return Array.from({length:5},(_,i)=>{const d=new Date(n.getTime());d.setUTCDate(d.getUTCDate()+off+i);return`${d.getUTCMonth()+1}/${d.getUTCDate()}`;});
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function txt(prop){return prop?.title?.[0]?.text?.content||prop?.rich_text?.[0]?.text?.content||'';}
+
+/* ═══════════════════════════════════════════
+   Notion API (Netlify Function 경유)
+═══════════════════════════════════════════ */
+async function notion(method, path, body) {
+  const r = await fetch(API_BASE + path, {
+    method,
+    headers: {
+      'Content-Type':    'application/json',
+      'x-notion-token':  S.token,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.message || `HTTP ${r.status}`);
+  return data;
+}
+
+/* ═══════════════════════════════════════════
+   데이터 로드
+═══════════════════════════════════════════ */
+async function loadTasks(day, user) {
+  const k = `${day}-${user}`;
+  if (S.tasks[k] !== undefined) return;
+  S.tL = true; render();
+  try {
+    const res = await notion('POST', `/databases/${TASKS_DB}/query`, {
+      filter: { and: [
+        { property:'요일',   select: { equals: DAYS[day].d } },
+        { property:'담당자', select: { equals: user        } },
+      ]},
+    });
+    S.tasks[k] = res.results.map(p => ({
+      id:        p.id,
+      text:      txt(p.properties['업무명']),
+      completed: p.properties['완료']?.checkbox         || false,
+      type:      p.properties['업무타입']?.select?.name  || null,
+      urgency:   p.properties['긴급도']?.select?.name    || null,
+      priority:  p.properties['우선순위']?.number        || null,
+      carried:   p.properties['이관']?.checkbox          || false,
+    }));
+  } catch(e) {
+    S.tasks[k] = [];
+    toast('태스크 로드 실패: ' + e.message, true);
+  }
+  S.tL = false; render();
+}
+
+async function loadSched(day, user) {
+  const k = `${day}-${user}`;
+  if (S.sched[k] !== undefined) return;
+  S.sL = true; render();
+  try {
+    const res = await notion('POST', `/databases/${SCHED_DB}/query`, {
+      filter: { and: [
+        { property:'요일',  select:   { equals: DAYS[day].d } },
+        { property:'활성',  checkbox: { equals: true        } },
+        { or: [
+          { property:'담당자', select: { equals: user    } },
+          { property:'담당자', select: { equals: '공통'  } },
+        ]},
+      ]},
+    });
+    S.sched[k] = res.results
+      .map(p => ({
+        id:       p.id,
+        label:    txt(p.properties['업무명']),
+        slot:     p.properties['시간대']?.select?.name     || '유동',
+        type:     p.properties['업무타입']?.select?.name   || null,
+        duration: txt(p.properties['소요시간']),
+        desc:     txt(p.properties['설명']),
+      }))
+      .sort((a,b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
+  } catch(e) {
+    S.sched[k] = [];
+  }
+  S.sL = false; render();
+}
+
+/* ═══════════════════════════════════════════
+   CRUD
+═══════════════════════════════════════════ */
+async function doAdd(text) {
+  const k = `${S.day}-${S.user}`, tid = `t${Date.now()}`;
+  const tmp = {id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,_p:true};
+  (S.tasks[k]=S.tasks[k]||[]).push(tmp); render();
+  try {
+    const res = await notion('POST', '/pages', {
+      parent: { database_id: TASKS_DB },
+      properties: {
+        '업무명': { title:    [{ text:{ content: text } }] },
+        '요일':   { select:   { name: DAYS[S.day].d       } },
+        '담당자': { select:   { name: S.user              } },
+        '완료':   { checkbox: false                        },
+      },
+    });
+    const i = S.tasks[k].findIndex(t=>t.id===tid);
+    if(i>=0) S.tasks[k][i] = {id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false};
+    toast('✓ 추가됨');
+  } catch(e) {
+    S.tasks[k] = S.tasks[k].filter(t=>t.id!==tid);
+    toast('추가 실패: ' + e.message, true);
+  }
+  render();
+}
+
+async function doToggle(id) {
+  const k=`${S.day}-${S.user}`, t=S.tasks[k]?.find(t=>t.id===id);
+  if(!t)return;
+  const nv=!t.completed; t.completed=nv; render();
+  try {
+    await notion('PATCH', `/pages/${id}`, {properties:{'완료':{checkbox:nv}}});
+  } catch(e) { t.completed=!nv; toast('업데이트 실패',true); render(); }
+}
+
+async function doDel(id) {
+  const k=`${S.day}-${S.user}`, prev=[...(S.tasks[k]||[])];
+  S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id); render();
+  try {
+    await notion('PATCH', `/pages/${id}`, {archived:true});
+    toast('삭제됨');
+  } catch(e) { S.tasks[k]=prev; toast('삭제 실패',true); render(); }
+}
+
+function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
+
+/* ═══════════════════════════════════════════
+   토큰 설정 화면
+═══════════════════════════════════════════ */
+function renderSetup() {
+  return `
+  <div style="max-width:540px;margin:60px auto;padding:0 24px">
+    <div style="margin-bottom:32px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase;margin-bottom:8px">뉴픽 · WEEKLY PLANNER</div>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px">초기 설정</h1>
+      <p style="font-size:13px;color:#9b9490;line-height:1.7">Notion 통합 토큰을 입력해주세요.<br/>한 번만 설정하면 이 기기에서 계속 사용됩니다.</p>
+    </div>
+
+    <div style="background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:20px;margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;color:#9b9490;margin-bottom:14px;letter-spacing:.5px">설정 방법</div>
+      ${[
+        ['1','<a href="https://www.notion.so/profile/integrations" target="_blank">notion.so/profile/integrations</a> 접속'],
+        ['2','<b>뉴픽 플래너</b> 통합 클릭 → 토큰 복사 <span style="color:#5a5652">(ntn_으로 시작)</span>'],
+        ['3','Notion에서 <b>📋 주간 태스크</b> DB → ··· → 연결 추가 → 뉴픽 플래너'],
+        ['4','<b>📌 고정 스케줄</b> DB도 동일하게 연결'],
+      ].map(([n,t])=>`
+        <div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start">
+          <span style="min-width:20px;height:20px;background:#2a2a2a;border-radius:50%;font-size:10px;font-weight:700;color:#9b9490;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n}</span>
+          <span style="font-size:12px;color:#f0ede8;line-height:1.6">${t}</span>
+        </div>`).join('')}
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;color:#9b9490;margin-bottom:6px;font-weight:600">통합 토큰</div>
+      <input id="token-input" type="password" placeholder="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        style="width:100%;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;
+        padding:11px 14px;font-size:13px;color:#f0ede8;outline:none;transition:border-color .15s;font-family:monospace"
+        onfocus="this.style.borderColor='#e05c1a'" onblur="this.style.borderColor='#2a2a2a'"
+        onkeydown="if(event.key==='Enter')testToken()"/>
+    </div>
+
+    <button onclick="testToken()" ${S.testing?'disabled':''}
+      style="width:100%;background:${S.testing?'#5a2e0d':'#e05c1a'};border:none;border-radius:8px;
+      padding:12px;font-size:13px;font-weight:700;color:#fff;cursor:${S.testing?'not-allowed':'pointer'}">
+      ${S.testing?'<span style="display:flex;align-items:center;justify-content:center;gap:8px"><span class="sp"></span> 연결 확인 중…</span>':'연결 테스트 후 저장'}
+    </button>
+
+    ${S.toast?`<div style="margin-top:12px;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600;
+      background:${S.toast.err?'#3f1010':'#0d1e18'};color:${S.toast.err?'#f87171':'#34d399'};
+      border:1px solid ${S.toast.err?'#dc2626':'#10b981'}">${esc(S.toast.m)}</div>`:''}
+  </div>`;
+}
+
+async function testToken() {
+  const inp = document.getElementById('token-input');
+  const token = (inp?.value||'').trim();
+  if (!token) { toast('토큰을 입력해주세요', true); return; }
+  S.testing = true; render();
+  try {
+    const r = await fetch(`${API_BASE}/databases/${TASKS_DB}`, {
+      headers: { 'x-notion-token': token }
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.message || `${r.status} — DB 연결을 확인해주세요`);
+    S.token = token;
+    localStorage.setItem(TOKEN_KEY, token);
+    S.testing = false;
+    render();
+    loadTasks(S.day, S.user);
+    setTimeout(() => loadSched(S.day, S.user), 400);
+  } catch(e) {
+    S.testing = false;
+    toast('연결 실패: ' + e.message, true);
+    render();
+  }
+}
+
+/* ═══════════════════════════════════════════
+   메인 렌더링
+═══════════════════════════════════════════ */
+function render() {
+  const app = document.getElementById('app');
+  if (!app) return;
+
+  if (!S.token) { app.innerHTML = renderSetup(); return; }
+
+  const dates=wDates(), today=dIdx(), dc=DAYS[S.day], ac=dc.c;
+  const tasks=S.tasks[`${S.day}-${S.user}`]||[];
+  const sched=S.sched[`${S.day}-${S.user}`]||[];
+  const inc=tasks.filter(t=>!t.completed), dn=tasks.filter(t=>t.completed);
+
+  app.innerHTML = `
+  ${S.toast?`<div style="position:fixed;bottom:20px;right:20px;z-index:999;
+    background:${S.toast.err?'#3f1010':'#0d1e18'};border:1px solid ${S.toast.err?'#dc2626':'#10b981'};
+    border-radius:8px;padding:10px 16px;font-size:12px;font-weight:600;
+    color:${S.toast.err?'#f87171':'#34d399'};animation:fadeIn .2s ease">${esc(S.toast.m)}</div>`:''}
+
+  <div style="background:#161616;border-bottom:1px solid #2a2a2a;padding:20px 24px 0">
+    <div style="max-width:1160px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">
+        <span style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase">뉴픽 · WEEKLY PLANNER</span>
+        <span style="color:#3a3632;font-size:10px">|</span>
+        <span style="font-size:10px;color:#5a5652">${dates[0]} ~ ${dates[4]}</span>
+        ${S.tL||S.sL?`<div class="sp" style="margin-left:6px"></div>`:''}
+      </div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <h1 style="font-size:22px;font-weight:800;letter-spacing:-.5px">주간 업무 플래너</h1>
+          <span style="font-size:12px;color:#9b9490">팀 공유 · Notion 연동</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="refresh()" style="background:none;border:1px solid #2a2a2a;border-radius:6px;padding:4px 10px;font-size:10px;color:#5a5652;cursor:pointer">↺ 새로고침</button>
+          <button onclick="resetToken()" style="background:none;border:1px solid #2a2a2a;border-radius:6px;padding:4px 10px;font-size:10px;color:#5a5652;cursor:pointer">⚙ 토큰 재설정</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:4px;margin-bottom:12px">
+        ${USERS.map(u=>{const a=S.user===u,c=UC[u];return`<button onclick="selUser('${u}')"
+          style="background:${a?c+'22':'none'};border:1px solid ${a?c:'#2a2a2a'};border-radius:6px;
+          padding:5px 14px;font-size:11px;font-weight:700;color:${a?c:'#5a5652'};cursor:pointer;transition:all .15s">${u}</button>`;}).join('')}
+      </div>
+
+      <div style="display:flex;gap:2px">
+        ${DAYS.map((d,i)=>{
+          const a=i===S.day,is=i===today;
+          const cnt=(S.tasks[`${i}-${S.user}`]||[]).filter(t=>!t.completed).length;
+          return`<button onclick="selDay(${i})" style="background:none;border:none;cursor:pointer;padding:10px 14px 13px;
+            border-bottom:2px solid ${a?d.c:'transparent'};transition:all .15s;white-space:nowrap">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+              <span style="font-size:11px;font-weight:${a?700:400};color:${a?d.c:'#5a5652'}">${d.d}</span>
+              <span style="font-size:10px;color:${is?'#e05c1a':'#5a5652'};font-weight:${is?700:400}">${dates[i]}</span>
+              ${cnt>0?`<span style="font-size:9px;background:${d.c}33;color:${d.c};border-radius:8px;padding:1px 5px;font-weight:700">${cnt}</span>`:`<span style="height:16px;display:block"></span>`}
+            </div>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1160px;margin:0 auto;padding:24px 24px 40px;display:flex;gap:20px;align-items:flex-start">
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
+          <span style="font-size:13px;font-weight:700">${dc.l} · ${S.user}</span>
+          ${inc.length>0?`<span style="font-size:10px;background:${ac}22;color:${ac};border-radius:10px;padding:2px 8px;font-weight:700">${inc.length}건 진행 중</span>`:''}
+        </div>
+        ${dn.length>0?`<button onclick="clearDone()" style="background:none;border:1px solid #2a2a2a;border-radius:6px;padding:5px 10px;font-size:10px;color:#9b9490;cursor:pointer">완료 ${dn.length}건 삭제</button>`:''}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="ti" placeholder="업무 내용 입력 후 Enter…"
+          style="flex:1;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;
+          padding:10px 14px;font-size:13px;color:#f0ede8;outline:none;transition:border-color .15s"
+          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#2a2a2a'"
+          onkeydown="if(event.key==='Enter')addTask()"/>
+        <button onclick="addTask()" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">추가</button>
+      </div>
+      <div>${rTasks(tasks,ac)}</div>
+    </div>
+
+    <div style="width:340px;flex-shrink:0;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
+        <span style="font-size:13px;font-weight:700">${dc.l} · 고정 업무</span>
+      </div>
+      ${rSched(sched)}
+      <div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px;margin-top:4px">
+        <div style="font-size:11px;font-weight:700;color:#9b9490;margin-bottom:10px;letter-spacing:.5px">이번 주 현황 · ${S.user}</div>
+        ${rProg()}
+      </div>
+    </div>
+  </div>`;
+}
+
+function rTasks(tasks,ac){
+  if(S.tL&&!tasks.length)return`<div class="sk" style="height:56px;margin-bottom:8px"></div><div class="sk" style="height:56px;margin-bottom:8px;opacity:.6"></div><div class="sk" style="height:56px;opacity:.35"></div>`;
+  if(!tasks.length)return`<div style="background:#1e1e1e;border:1px dashed #2a2a2a;border-radius:10px;padding:32px 20px;text-align:center;margin-top:4px">
+    <div style="font-size:24px;margin-bottom:8px">📋</div>
+    <div style="font-size:13px;color:#5a5652">오늘 처리할 업무를 입력해주세요.</div>
+    <div style="font-size:11px;color:#3a3632;margin-top:4px">Notion DB에서 직접 추가해도 반영됩니다</div></div>`;
+  const inc=tasks.filter(t=>!t.completed),dn=tasks.filter(t=>t.completed);
+  let h=inc.map(t=>tRow(t,ac,false)).join('');
+  if(dn.length){
+    h+=`<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#2a2a2a"></div><span style="font-size:10px;color:#5a5652;font-weight:700">완료 ${dn.length}건</span><div style="flex:1;height:1px;background:#2a2a2a"></div></div>`;
+    h+=dn.map(t=>tRow(t,ac,true)).join('');
+  }
+  return h;
+}
+
+function tRow(t,ac,dim){
+  const us=t.urgency?(US[t.urgency]||US['보통']):null;
+  return`<div class="row" style="background:${dim?'#111':'#1e1e1e'};border:1px solid ${dim?'#2a2a2a':t.priority===1?ac+'44':'#2a2a2a'};border-radius:10px;
+    padding:12px 14px;display:flex;align-items:flex-start;gap:12px;opacity:${dim?.55:1};margin-bottom:8px">
+    <button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
+      style="width:22px;height:22px;border-radius:6px;flex-shrink:0;margin-top:1px;
+      border:2px solid ${t.completed?ac:'#333'};background:${t.completed?ac:'transparent'};
+      cursor:pointer;display:flex;align-items:center;justify-content:center">
+      ${t.completed?`<span style="font-size:11px;color:#fff;font-weight:700">✓</span>`:''}
+    </button>
+    <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+      ${t.priority&&!dim?`<span style="font-size:9px;font-weight:800;color:${ac};width:16px;text-align:center">${t.priority}</span>`:''}
+      ${us&&!dim?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:2px 6px;font-weight:700">${t.urgency}</span>`:''}
+      ${t.carried&&!dim?`<span style="font-size:9px;background:#1a1a1a;color:#5a5652;border-radius:4px;padding:2px 6px;font-weight:700">이관</span>`:''}
+      <span style="font-size:13px;color:${t.completed?'#5a5652':'#f0ede8'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
+    </div></div>
+    ${t._p?`<div class="sp"></div>`:`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#5a5652;font-size:14px;padding:2px;flex-shrink:0;opacity:.5;line-height:1">×</button>`}
+  </div>`;
+}
+
+function rSched(sched){
+  if(S.sL&&!sched.length)return`<div class="sk" style="height:88px;margin-bottom:12px"></div><div class="sk" style="height:88px;margin-bottom:12px;opacity:.6"></div><div class="sk" style="height:88px;opacity:.35"></div>`;
+  if(!sched.length)return`<div style="background:#1e1e1e;border:1px dashed #2a2a2a;border-radius:10px;padding:20px;text-align:center;color:#5a5652;font-size:12px">고정 스케줄 없음 — Notion 📌 고정 스케줄 DB에서 추가하세요</div>`;
+  return sched.map(s=>{
+    const st=TS[s.type]||TS['유동'],fl=s.slot==='유동';
+    return`<div style="background:${fl?'#1e1e1e':st.bg};border:1px ${fl?'dashed':'solid'} ${fl?'#2a2a2a':st.d+'33'};border-radius:10px;padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:9px;background:${fl?'#222':st.d+'22'};color:${fl?'#5a5652':st.t};border:1px solid ${fl?'#2a2a2a':st.d+'44'};border-radius:4px;padding:2px 7px;font-weight:700">${s.type||'유동'}</span>
+        <span style="font-size:11px;color:${fl?'#9b9490':st.t};font-weight:600">${SL[s.slot]||s.slot}</span>
+        ${s.duration?`<span style="font-size:10px;color:${fl?'#5a5652':st.d};margin-left:auto;font-weight:700">${esc(s.duration)}</span>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:#f0ede8;margin-bottom:6px">${esc(s.label)}</div>
+      ${s.desc?`<p style="margin:0;font-size:11px;color:#9b9490;line-height:1.65">${esc(s.desc)}</p>`:''}
+    </div>`;
+  }).join('');
+}
+
+function rProg(){
+  return DAYS.map((d,i)=>{
+    const ts=S.tasks[`${i}-${S.user}`]||[],tot=ts.length,dn=ts.filter(t=>t.completed).length;
+    const pct=tot?Math.round(dn/tot*100):0,nl=S.tasks[`${i}-${S.user}`]===undefined;
+    return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer" onclick="selDay(${i})">
+      <span style="font-size:10px;color:${i===S.day?d.c:'#5a5652'};font-weight:700;width:14px">${d.d}</span>
+      <div style="flex:1;height:4px;background:#2a2a2a;border-radius:2px;overflow:hidden">
+        ${nl?`<div style="height:100%;width:35%" class="sk"></div>`:`<div style="height:100%;width:${pct}%;background:${d.c};border-radius:2px;transition:width .3s"></div>`}
+      </div>
+      <span style="font-size:10px;color:#5a5652;width:36px;text-align:right">${nl?'…':tot?`${dn}/${tot}`:'—'}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════
+   이벤트
+═══════════════════════════════════════════ */
+function selDay(i){S.day=i;render();loadTasks(i,S.user);setTimeout(()=>loadSched(i,S.user),400);setTimeout(()=>{const e=document.getElementById('ti');if(e)e.focus();},60);}
+function selUser(u){S.user=u;render();loadTasks(S.day,u);setTimeout(()=>loadSched(S.day,u),400);}
+function addTask(){const e=document.getElementById('ti'),t=(e?.value||'').trim();if(!t)return;e.value='';doAdd(t);}
+function toggle(id){doToggle(id);}
+function del(id){doDel(id);}
+function clearDone(){if(!confirm('완료된 업무를 모두 삭제할까요?'))return;(S.tasks[`${S.day}-${S.user}`]||[]).filter(t=>t.completed).forEach(t=>doDel(t.id));}
+function refresh(){delete S.tasks[`${S.day}-${S.user}`];delete S.sched[`${S.day}-${S.user}`];render();loadTasks(S.day,S.user);setTimeout(()=>loadSched(S.day,S.user),400);}
+function resetToken(){if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;localStorage.removeItem(TOKEN_KEY);S.token='';S.tasks={};S.sched={};render();}
+
+/* ═══════════════════════════════════════════
+   초기화
+═══════════════════════════════════════════ */
+render();
+if(S.token){
+  loadTasks(S.day,S.user);
+  setTimeout(()=>loadSched(S.day,S.user),400);
+}
+</script>
+</body>
+</html>
