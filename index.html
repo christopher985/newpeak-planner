@@ -18,14 +18,33 @@
   .sp{width:13px;height:13px;border:2px solid #d4d0ca;border-top-color:#e05c1a;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block}
   button:not([disabled]):hover{opacity:.75}
   a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
+
+  /* 캘린더 */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+  .cal-day-hdr{font-size:10px;font-weight:700;text-align:center;padding:4px 0;color:#9b9794}
+  .cal-day-hdr.sun{color:#ef4444}
+  .cal-day-hdr.sat{color:#3b82f6}
+  .cal-cell{min-height:32px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;cursor:pointer;border-radius:6px;transition:all .12s;position:relative;padding:3px 0}
+  .cal-cell:hover{background:#f0eee9}
+  .cal-cell.other-month .cal-num{color:#d4d0ca}
+  .cal-cell.today .cal-num{background:#e05c1a;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  .cal-cell.selected{background:#1c1a1710}
+  .cal-cell.selected .cal-num{background:#1c1a17;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  .cal-cell.today.selected .cal-num{background:#e05c1a}
+  .cal-cell.sun .cal-num{color:#ef4444}
+  .cal-cell.sat .cal-num{color:#3b82f6}
+  .cal-cell.today .cal-num,.cal-cell.selected .cal-num{color:#fff!important}
+  .cal-num{font-size:12px;font-weight:500;line-height:1}
+  .cal-dots{display:flex;gap:2px;justify-content:center;min-height:5px}
+  .cal-dot{width:4px;height:4px;border-radius:50%}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    설정
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
 const TASKS_DB  = '0de58e7636134d4382df512e18a3ab0f';
 const SCHED_DB  = '014f0605d8fb490abfb58789e7a9c30b';
 const TOKEN_KEY = 'newpick-notion-token';
@@ -34,109 +53,146 @@ const API_BASE  = '/.netlify/functions/proxy';
 const USERS = ['크리스토퍼', '켈리', '에디'];
 const UC    = { '크리스토퍼':'#e05c1a', '켈리':'#ec4899', '에디':'#3b82f6' };
 
-const DAYS = [
-  {d:'월',l:'월요일',c:'#3b82f6'},{d:'화',l:'화요일',c:'#10b981'},
-  {d:'수',l:'수요일',c:'#f59e0b'},{d:'목',l:'목요일',c:'#ef4444'},
-  {d:'금',l:'금요일',c:'#a855f7'},
-];
+const DAY_NAMES = ['일','월','화','수','목','금','토'];
+const WEEKDAY_KR = ['월','화','수','목','금'];
 const SLOT_ORDER = ['오전','점심이후','오후','유동'];
 const SL = {오전:'오전',점심이후:'점심 이후 ~ 14:00',오후:'오후 전반',유동:'오후 후반 (유동)'};
-
-/* 라이트 모드용 업무타입 스타일 */
 const TS = {
-  '분석':   {bg:'#eff6ff',t:'#1d4ed8',d:'#3b82f6'},
-  '운영':   {bg:'#f0fdf4',t:'#15803d',d:'#22c55e'},
-  '메타':   {bg:'#f5f3ff',t:'#6d28d9',d:'#8b5cf6'},
+  '분석':{bg:'#eff6ff',t:'#1d4ed8',d:'#3b82f6'},
+  '운영':{bg:'#f0fdf4',t:'#15803d',d:'#22c55e'},
+  '메타':{bg:'#f5f3ff',t:'#6d28d9',d:'#8b5cf6'},
   '프로모션':{bg:'#fff7ed',t:'#c2410c',d:'#f97316'},
-  '네이버': {bg:'#f0fdf4',t:'#166534',d:'#16a34a'},
-  '브랜드': {bg:'#fefce8',t:'#a16207',d:'#eab308'},
-  'CRM':    {bg:'#fef2f2',t:'#b91c1c',d:'#ef4444'},
-  '전략':   {bg:'#faf5ff',t:'#7e22ce',d:'#a855f7'},
-  '보고서': {bg:'#fdf4ff',t:'#a21caf',d:'#d946ef'},
-  '회의':   {bg:'#f0fdf4',t:'#15803d',d:'#22c55e'},
-  '유동':   {bg:'#f9f8f6',t:'#6b7280',d:'#9ca3af'},
+  '네이버':{bg:'#f0fdf4',t:'#166534',d:'#16a34a'},
+  '브랜드':{bg:'#fefce8',t:'#a16207',d:'#eab308'},
+  'CRM':{bg:'#fef2f2',t:'#b91c1c',d:'#ef4444'},
+  '전략':{bg:'#faf5ff',t:'#7e22ce',d:'#a855f7'},
+  '보고서':{bg:'#fdf4ff',t:'#a21caf',d:'#d946ef'},
+  '회의':{bg:'#f0fdf4',t:'#15803d',d:'#22c55e'},
+  '유동':{bg:'#f9f8f6',t:'#6b7280',d:'#9ca3af'},
 };
-const US = {
-  '긴급': {bg:'#fef2f2',t:'#b91c1c'},
-  '높음': {bg:'#fffbeb',t:'#b45309'},
-  '보통': {bg:'#f9f8f6',t:'#6b7280'},
-};
+const US = {'긴급':{bg:'#fef2f2',t:'#b91c1c'},'높음':{bg:'#fffbeb',t:'#b45309'},'보통':{bg:'#f9f8f6',t:'#6b7280'}};
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    상태
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
+function todayStr(){
+  const n=new Date(Date.now()+9*36e5);
+  return`${n.getUTCFullYear()}-${String(n.getUTCMonth()+1).padStart(2,'0')}-${String(n.getUTCDate()).padStart(2,'0')}`;
+}
+function dateToWeekday(dateStr){
+  // "2026-04-10" → 요일 인덱스 (0=월 ~ 4=금), 주말이면 null
+  const d = new Date(dateStr+'T00:00:00Z');
+  const dow = d.getUTCDay(); // 0=일,1=월,...,6=토
+  if(dow===0||dow===6) return null;
+  return dow-1; // 0=월,1=화,...,4=금
+}
+function dateToKrWeekday(dateStr){
+  const idx=dateToWeekday(dateStr);
+  return idx===null?null:WEEKDAY_KR[idx];
+}
+function getKSTNow(){return new Date(Date.now()+9*36e5);}
+
 let S = {
-  token: localStorage.getItem(TOKEN_KEY) || '',
-  day: dIdx(), user: USERS[0],
-  tasks: {}, sched: {},
+  token: localStorage.getItem(TOKEN_KEY)||'',
+  user: USERS[0],
+  // 캘린더 상태
+  calYear: getKSTNow().getUTCFullYear(),
+  calMonth: getKSTNow().getUTCMonth(), // 0-indexed, 가운데 달 기준
+  selectedDate: todayStr(),
+  // 날짜별 태스크 캐시: key = "YYYY-MM-DD-user"
+  tasks: {},
+  // 날짜별 스케줄 캐시: key = "weekdayIdx-user"
+  sched: {},
+  // 로딩
   tL: false, sL: false,
   toast: null, testing: false,
 };
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    유틸
-═══════════════════════════════════════════ */
-function dIdx(){const d=new Date(Date.now()+9*36e5).getUTCDay();return d===0?4:d===6?0:d-1;}
-function getKST(){return new Date(Date.now()+9*36e5);}
-function wDates(){
-  const n=getKST(),dow=n.getUTCDay()||7,off=1-dow;
-  return Array.from({length:5},(_,i)=>{
-    const d=new Date(n.getTime());d.setUTCDate(d.getUTCDate()+off+i);
-    return{mm:d.getUTCMonth()+1,dd:d.getUTCDate(),label:`${d.getUTCMonth()+1}/${d.getUTCDate()}`};
-  });
-}
+═══════════════════════════════════════ */
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function txt(prop){return prop?.title?.[0]?.text?.content||prop?.rich_text?.[0]?.text?.content||'';}
+function fmtDate(dateStr){
+  // "2026-04-10" → "4/10"
+  const[,m,d]=dateStr.split('-');
+  return`${parseInt(m)}/${parseInt(d)}`;
+}
+function fmtDateKr(dateStr){
+  const[y,m,d]=dateStr.split('-');
+  const dow=['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00Z').getUTCDay()];
+  return`${parseInt(m)}월 ${parseInt(d)}일 ${dow}요일`;
+}
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    Notion API
-═══════════════════════════════════════════ */
-async function notion(method, path, body) {
-  const r = await fetch(API_BASE + path, {
+═══════════════════════════════════════ */
+async function notion(method,path,body){
+  const r=await fetch(API_BASE+path,{
     method,
-    headers: {'Content-Type':'application/json','x-notion-token':S.token},
-    body: body ? JSON.stringify(body) : undefined,
+    headers:{'Content-Type':'application/json','x-notion-token':S.token},
+    body:body?JSON.stringify(body):undefined,
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.message || `HTTP ${r.status}`);
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.message||`HTTP ${r.status}`);
   return data;
 }
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    데이터 로드
-═══════════════════════════════════════════ */
-async function loadTasks(day, user) {
-  const k=`${day}-${user}`;
+═══════════════════════════════════════ */
+async function loadTasksByDate(dateStr,user){
+  const k=`${dateStr}-${user}`;
   if(S.tasks[k]!==undefined)return;
   S.tL=true;render();
   try{
+    const weekday=dateToKrWeekday(dateStr);
+    if(!weekday){S.tasks[k]=[];S.tL=false;render();return;} // 주말
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
       filter:{and:[
-        {property:'요일',select:{equals:DAYS[day].d}},
+        {property:'날짜',date:{equals:dateStr}},
         {property:'담당자',select:{equals:user}},
       ]},
     });
-    S.tasks[k]=res.results.map(p=>({
-      id:p.id,
-      text:txt(p.properties['업무명']),
-      completed:p.properties['완료']?.checkbox||false,
-      type:p.properties['업무타입']?.select?.name||null,
-      urgency:p.properties['긴급도']?.select?.name||null,
-      priority:p.properties['우선순위']?.number||null,
-      carried:p.properties['이관']?.checkbox||false,
-    }));
+    // 날짜 필드가 없는 기존 데이터도 요일로 fallback 조회
+    if(res.results.length===0){
+      const res2=await notion('POST',`/databases/${TASKS_DB}/query`,{
+        filter:{and:[
+          {property:'요일',select:{equals:weekday}},
+          {property:'담당자',select:{equals:user}},
+          {property:'날짜',date:{is_empty:true}},
+        ]},
+      });
+      S.tasks[k]=res2.results.map(mapTask);
+    } else {
+      S.tasks[k]=res.results.map(mapTask);
+    }
   }catch(e){S.tasks[k]=[];toast('태스크 로드 실패: '+e.message,true);}
   S.tL=false;render();
 }
 
-async function loadSched(day,user){
-  const k=`${day}-${user}`;
+function mapTask(p){
+  return{
+    id:p.id,
+    text:txt(p.properties['업무명']),
+    completed:p.properties['완료']?.checkbox||false,
+    type:p.properties['업무타입']?.select?.name||null,
+    urgency:p.properties['긴급도']?.select?.name||null,
+    priority:p.properties['우선순위']?.number||null,
+    carried:p.properties['이관']?.checkbox||false,
+    dateStr:p.properties['날짜']?.date?.start||null,
+  };
+}
+
+async function loadSched(weekdayIdx,user){
+  const k=`${weekdayIdx}-${user}`;
   if(S.sched[k]!==undefined)return;
   S.sL=true;render();
+  const weekday=WEEKDAY_KR[weekdayIdx];
   try{
     const res=await notion('POST',`/databases/${SCHED_DB}/query`,{
       filter:{and:[
-        {property:'요일',select:{equals:DAYS[day].d}},
+        {property:'요일',select:{equals:weekday}},
         {property:'활성',checkbox:{equals:true}},
         {or:[{property:'담당자',select:{equals:user}},{property:'담당자',select:{equals:'공통'}}]},
       ]},
@@ -154,32 +210,33 @@ async function loadSched(day,user){
   S.sL=false;render();
 }
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    CRUD
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
 async function doAdd(text){
-  const k=`${S.day}-${S.user}`,tid=`t${Date.now()}`;
+  const k=`${S.selectedDate}-${S.user}`,tid=`t${Date.now()}`;
+  const weekday=dateToKrWeekday(S.selectedDate);
   const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,_p:true};
   (S.tasks[k]=S.tasks[k]||[]).push(tmp);render();
   try{
-    const res=await notion('POST','/pages',{
-      parent:{database_id:TASKS_DB},
-      properties:{
-        '업무명':{title:[{text:{content:text}}]},
-        '요일':{select:{name:DAYS[S.day].d}},
-        '담당자':{select:{name:S.user}},
-        '완료':{checkbox:false},
-      },
-    });
+    const props={
+      '업무명':{title:[{text:{content:text}}]},
+      '담당자':{select:{name:S.user}},
+      '완료':{checkbox:false},
+    };
+    if(weekday) props['요일']={select:{name:weekday}};
+    // 날짜 저장
+    props['날짜']={date:{start:S.selectedDate}};
+    const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:props});
     const i=S.tasks[k].findIndex(t=>t.id===tid);
-    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false};
+    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate};
     toast('✓ 추가됨');
   }catch(e){S.tasks[k]=S.tasks[k].filter(t=>t.id!==tid);toast('추가 실패: '+e.message,true);}
   render();
 }
 
 async function doToggle(id){
-  const k=`${S.day}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
   if(!t)return;
   const nv=!t.completed;t.completed=nv;render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});}
@@ -187,7 +244,7 @@ async function doToggle(id){
 }
 
 async function doDel(id){
-  const k=`${S.day}-${S.user}`,prev=[...(S.tasks[k]||[])];
+  const k=`${S.selectedDate}-${S.user}`,prev=[...(S.tasks[k]||[])];
   S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id);render();
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('삭제됨');}
   catch(e){S.tasks[k]=prev;toast('삭제 실패',true);render();}
@@ -195,46 +252,115 @@ async function doDel(id){
 
 function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
 
-/* ═══════════════════════════════════════════
-   캘린더 렌더링
-═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════
+   3개월 캘린더 렌더링
+═══════════════════════════════════════ */
 function rCalendar(){
-  const dates=wDates();
-  const today=dIdx();
-  const dayNames=['월','화','수','목','금'];
-  
+  // 이전달 / 현재달 / 다음달
+  const months=[-1,0,1].map(offset=>{
+    let y=S.calYear,m=S.calMonth+offset;
+    if(m<0){m+=12;y--;}
+    if(m>11){m-=12;y++;}
+    return{year:y,month:m};
+  });
+
+  const today=todayStr();
+
+  const monthHtml=months.map(({year,month})=>{
+    const monthName=`${year}. ${String(month+1).padStart(2,'0')}.`;
+    const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay(); // 0=일
+    const lastDate=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+    const prevLastDate=new Date(Date.UTC(year,month,0)).getUTCDate();
+
+    let cells=[];
+    // 이전달 날짜 채우기
+    for(let i=firstDay-1;i>=0;i--){
+      const d=prevLastDate-i;
+      const pm=month-1<0?11:month-1;
+      const py=month-1<0?year-1:year;
+      const ds=`${py}-${String(pm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      cells.push({d,ds,otherMonth:true});
+    }
+    // 이번달
+    for(let d=1;d<=lastDate;d++){
+      const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      cells.push({d,ds,otherMonth:false});
+    }
+    // 다음달 채우기 (6주 맞춤)
+    const remaining=42-cells.length;
+    for(let d=1;d<=remaining;d++){
+      const nm=month+1>11?0:month+1;
+      const ny=month+1>11?year+1:year;
+      const ds=`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      cells.push({d,ds,otherMonth:true});
+    }
+
+    const cellHtml=cells.map(({d,ds,otherMonth})=>{
+      const isToday=ds===today;
+      const isSelected=ds===S.selectedDate;
+      const dow=new Date(ds+'T00:00:00Z').getUTCDay();
+      const isSun=dow===0,isSat=dow===6;
+      const isWeekend=isSun||isSat;
+
+      // 해당 날짜에 태스크가 있는지 점으로 표시
+      const k=`${ds}-${S.user}`;
+      const dayTasks=S.tasks[k]||[];
+      const hasTodo=dayTasks.filter(t=>!t.completed).length>0;
+      const hasDone=dayTasks.filter(t=>t.completed).length>0;
+
+      let cls='cal-cell';
+      if(otherMonth)cls+=' other-month';
+      if(isToday)cls+=' today';
+      if(isSelected)cls+=' selected';
+      if(isSun)cls+=' sun';
+      if(isSat)cls+=' sat';
+
+      let numStyle=`font-size:12px;font-weight:${isToday||isSelected?700:400};`;
+      if(isToday||isSelected){
+        numStyle=`width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;background:${isToday?'#e05c1a':'#1c1a17'};color:#fff!important;`;
+      } else if(!otherMonth){
+        numStyle+=`color:${isSun?'#ef4444':isSat?'#3b82f6':'#1c1a17'};`;
+      }
+
+      return`<div class="${cls}" onclick="selectDate('${ds}')" style="padding:4px 0">
+        <span style="${numStyle}">${d}</span>
+        <div class="cal-dots">
+          ${hasTodo?`<div class="cal-dot" style="background:#e05c1a"></div>`:''}
+          ${hasDone?`<div class="cal-dot" style="background:#22c55e"></div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return`<div style="flex:1;min-width:0">
+      <div style="text-align:center;font-size:13px;font-weight:700;color:#1c1a17;margin-bottom:10px">${monthName}</div>
+      <div class="cal-grid">
+        ${DAY_NAMES.map(n=>`<div class="cal-day-hdr${n==='일'?' sun':n==='토'?' sat':''}">${n}</div>`).join('')}
+        ${cellHtml}
+      </div>
+    </div>`;
+  }).join('<div style="width:1px;background:#e8e4de;flex-shrink:0"></div>');
+
   return`<div style="background:#fff;border-bottom:1px solid #e8e4de;padding:16px 24px">
     <div style="max-width:1160px;margin:0 auto">
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-        ${dates.map((date,i)=>{
-          const isSelected=i===S.day;
-          const isToday=i===today;
-          const dc=DAYS[i];
-          const cnt=(S.tasks[`${i}-${S.user}`]||[]).filter(t=>!t.completed).length;
-          return`<button onclick="selDay(${i})" style="
-            background:${isSelected?dc.c:'#f9f8f6'};
-            border:1.5px solid ${isSelected?dc.c:isToday?dc.c+'66':'#e8e4de'};
-            border-radius:10px;padding:10px 8px;cursor:pointer;
-            transition:all .15s;text-align:center;position:relative">
-            <div style="font-size:10px;font-weight:700;color:${isSelected?'rgba(255,255,255,0.75)':isToday?dc.c:'#9b9794'};margin-bottom:4px;letter-spacing:.5px">${dayNames[i]}</div>
-            <div style="font-size:18px;font-weight:800;color:${isSelected?'#fff':isToday?dc.c:'#1c1a17'};line-height:1">${date.dd}</div>
-            <div style="font-size:10px;color:${isSelected?'rgba(255,255,255,0.6)':'#b0ada8'};margin-top:3px">${date.mm}월</div>
-            ${cnt>0?`<div style="position:absolute;top:6px;right:6px;background:${isSelected?'rgba(255,255,255,0.3)':dc.c};color:${isSelected?'#fff':'#fff'};font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;line-height:1.4">${cnt}</div>`:''}
-          </button>`;
-        }).join('')}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <button onclick="moveMonth(-1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">‹</button>
+        <button onclick="goToday()" style="background:none;border:none;cursor:pointer;font-size:11px;font-weight:700;color:#e05c1a;letter-spacing:.3px">오늘</button>
+        <button onclick="moveMonth(1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">›</button>
+      </div>
+      <div style="display:flex;gap:16px">
+        ${monthHtml}
       </div>
     </div>
   </div>`;
 }
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    토큰 설정 화면
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
 function renderSetup(){
-  return`
-  <div style="max-width:540px;margin:60px auto;padding:0 24px">
+  return`<div style="max-width:540px;margin:60px auto;padding:0 24px">
     <div style="margin-bottom:32px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase;margin-bottom:8px">뉴픽 · WEEKLY PLANNER</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase;margin-bottom:8px">뉴픽 · WEEKLY TODO</div>
       <h1 style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px">초기 설정</h1>
       <p style="font-size:13px;color:#6b6762;line-height:1.7">Notion 통합 토큰을 입력해주세요.<br/>한 번만 설정하면 이 기기에서 계속 사용됩니다.</p>
     </div>
@@ -245,23 +371,20 @@ function renderSetup(){
         ['2','<b>뉴픽 Todo</b> 통합 클릭 → 토큰 복사 <span style="color:#b0ada8">(ntn_으로 시작)</span>'],
         ['3','Notion에서 <b>📋 주간 태스크</b> DB → ··· → 연결 추가 → 뉴픽 Todo'],
         ['4','<b>📌 고정 스케줄</b> DB도 동일하게 연결'],
-      ].map(([n,t])=>`
-        <div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start">
-          <span style="min-width:20px;height:20px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:50%;font-size:10px;font-weight:700;color:#9b9794;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n}</span>
-          <span style="font-size:12px;color:#1c1a17;line-height:1.6">${t}</span>
-        </div>`).join('')}
+      ].map(([n,t])=>`<div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start">
+        <span style="min-width:20px;height:20px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:50%;font-size:10px;font-weight:700;color:#9b9794;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n}</span>
+        <span style="font-size:12px;color:#1c1a17;line-height:1.6">${t}</span>
+      </div>`).join('')}
     </div>
     <div style="margin-bottom:12px">
       <div style="font-size:11px;color:#6b6762;margin-bottom:6px;font-weight:600">통합 토큰</div>
       <input id="token-input" type="password" placeholder="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        style="width:100%;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;
-        padding:11px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;font-family:monospace"
+        style="width:100%;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;padding:11px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;font-family:monospace"
         onfocus="this.style.borderColor='#e05c1a'" onblur="this.style.borderColor='#e8e4de'"
         onkeydown="if(event.key==='Enter')testToken()"/>
     </div>
     <button onclick="testToken()" ${S.testing?'disabled':''}
-      style="width:100%;background:${S.testing?'#f5d0b8':'#e05c1a'};border:none;border-radius:8px;
-      padding:12px;font-size:13px;font-weight:700;color:#fff;cursor:${S.testing?'not-allowed':'pointer'}">
+      style="width:100%;background:${S.testing?'#f5d0b8':'#e05c1a'};border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;color:#fff;cursor:${S.testing?'not-allowed':'pointer'}">
       ${S.testing?'<span style="display:flex;align-items:center;justify-content:center;gap:8px"><span class="sp"></span> 연결 확인 중…</span>':'연결 테스트 후 저장'}
     </button>
     ${S.toast?`<div style="margin-top:12px;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600;
@@ -278,24 +401,30 @@ async function testToken(){
   try{
     const r=await fetch(`${API_BASE}/databases/${TASKS_DB}`,{headers:{'x-notion-token':token}});
     const data=await r.json();
-    if(!r.ok)throw new Error(data.message||`${r.status} — DB 연결을 확인해주세요`);
+    if(!r.ok)throw new Error(data.message||`${r.status}`);
     S.token=token;localStorage.setItem(TOKEN_KEY,token);S.testing=false;render();
-    loadTasks(S.day,S.user);setTimeout(()=>loadSched(S.day,S.user),400);
+    loadTasksByDate(S.selectedDate,S.user);
+    const widx=dateToWeekday(S.selectedDate);
+    if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
   }catch(e){S.testing=false;toast('연결 실패: '+e.message,true);render();}
 }
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    메인 렌더링
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
 function render(){
   const app=document.getElementById('app');
   if(!app)return;
   if(!S.token){app.innerHTML=renderSetup();return;}
 
-  const dates=wDates(),today=dIdx(),dc=DAYS[S.day],ac=dc.c;
-  const tasks=S.tasks[`${S.day}-${S.user}`]||[];
-  const sched=S.sched[`${S.day}-${S.user}`]||[];
+  const widx=dateToWeekday(S.selectedDate);
+  const isWeekend=widx===null;
+  const tasks=S.tasks[`${S.selectedDate}-${S.user}`]||[];
+  const sched=widx!==null?(S.sched[`${widx}-${S.user}`]||[]):[];
   const inc=tasks.filter(t=>!t.completed),dn=tasks.filter(t=>t.completed);
+  const uc=UC[S.user]||'#e05c1a';
+  const dayColors=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
+  const ac=widx!==null?dayColors[widx]:'#9b9794';
 
   app.innerHTML=`
   ${S.toast?`<div style="position:fixed;bottom:20px;right:20px;z-index:999;
@@ -304,21 +433,14 @@ function render(){
     color:${S.toast.err?'#b91c1c':'#15803d'};animation:fadeIn .2s ease;box-shadow:0 4px 12px rgba(0,0,0,0.08)">${esc(S.toast.m)}</div>`:''}
 
   <!-- 헤더 -->
-  <div style="background:#fff;border-bottom:1px solid #e8e4de;padding:20px 24px 16px">
+  <div style="background:#fff;border-bottom:1px solid #e8e4de;padding:16px 24px 14px">
     <div style="max-width:1160px;margin:0 auto">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-        <span style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase">뉴픽 · WEEKLY TODO</span>
-        <span style="color:#d4d0ca;font-size:10px">|</span>
-        <span style="font-size:10px;color:#9b9794">${dates[0].label} ~ ${dates[4].label}</span>
-        ${S.tL||S.sL?`<div class="sp" style="margin-left:6px"></div>`:''}
-      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div style="display:flex;align-items:baseline;gap:12px">
-          <h1 style="font-size:22px;font-weight:800;letter-spacing:-.5px;color:#1c1a17">Todo</h1>
-          <span style="font-size:12px;color:#9b9794">팀 공유 · Notion 연동</span>
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase;margin-bottom:4px">뉴픽 · WEEKLY TODO</div>
+          <h1 style="font-size:20px;font-weight:800;letter-spacing:-.5px;color:#1c1a17">Todo</h1>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          <!-- 사용자 탭 -->
           ${USERS.map(u=>{const a=S.user===u,c=UC[u];return`<button onclick="selUser('${u}')"
             style="background:${a?c:'#f5f3ef'};border:1.5px solid ${a?c:'#e8e4de'};border-radius:6px;
             padding:5px 14px;font-size:11px;font-weight:700;color:${a?'#fff':c};cursor:pointer;transition:all .15s">${u}</button>`;}).join('')}
@@ -330,54 +452,65 @@ function render(){
     </div>
   </div>
 
-  <!-- 캘린더 -->
+  <!-- 3개월 캘린더 -->
   ${rCalendar()}
 
   <!-- 본문 -->
-  <div style="max-width:1160px;margin:0 auto;padding:24px 24px 40px;display:flex;gap:20px;align-items:flex-start">
+  <div style="max-width:1160px;margin:0 auto;padding:20px 24px 40px;display:flex;gap:20px;align-items:flex-start">
 
-    <!-- 좌측: 태스크 -->
+    <!-- 좌측: 선택된 날짜 태스크 -->
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+
+      <!-- 날짜 타이틀 -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
-          <span style="font-size:13px;font-weight:700;color:#1c1a17">${dc.l} · ${S.user}</span>
+          <span style="width:3px;height:18px;border-radius:2px;display:inline-block;background:${ac}"></span>
+          <div>
+            <span style="font-size:15px;font-weight:800;color:#1c1a17">${fmtDateKr(S.selectedDate)}</span>
+            <span style="font-size:12px;color:#9b9794;margin-left:8px">${S.user}</span>
+          </div>
           ${inc.length>0?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:10px;padding:2px 8px;font-weight:700">${inc.length}건 진행 중</span>`:''}
         </div>
         ${dn.length>0?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:5px 10px;font-size:10px;color:#9b9794;cursor:pointer">완료 ${dn.length}건 삭제</button>`:''}
       </div>
-      <div style="display:flex;gap:8px">
-        <input id="ti" placeholder="업무 내용 입력 후 Enter…"
+
+      ${isWeekend?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
+        <div style="font-size:20px;margin-bottom:8px">🌿</div>
+        <div style="font-size:13px;color:#9b9794">주말입니다. 푹 쉬세요!</div>
+      </div>`:`<div style="display:flex;gap:8px">
+        <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…"
           style="flex:1;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;
           padding:10px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)"
           onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"
           onkeydown="if(event.key==='Enter')addTask()"/>
         <button onclick="addTask()" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
-      </div>
-      <div>${rTasks(tasks,ac)}</div>
+      </div>`}
+
+      <div>${rTasks(tasks,ac,isWeekend)}</div>
     </div>
 
-    <!-- 우측: 스케줄 + 현황 -->
-    <div style="width:340px;flex-shrink:0;display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <!-- 우측: 고정 스케줄 + 현황 -->
+    <div style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:12px">
+      ${!isWeekend?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
-        <span style="font-size:13px;font-weight:700;color:#1c1a17">${dc.l} · 고정 업무</span>
+        <span style="font-size:13px;font-weight:700;color:#1c1a17">고정 업무</span>
       </div>
-      ${rSched(sched)}
-      <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px 16px;margin-top:4px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+      ${rSched(sched)}`:''}
+      <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
         <div style="font-size:11px;font-weight:700;color:#9b9794;margin-bottom:10px;letter-spacing:.5px">이번 주 현황 · ${S.user}</div>
-        ${rProg()}
+        ${rWeekProg()}
       </div>
     </div>
   </div>`;
 }
 
-function rTasks(tasks,ac){
+function rTasks(tasks,ac,isWeekend){
+  if(isWeekend)return'';
   if(S.tL&&!tasks.length)return`<div class="sk" style="height:56px;margin-bottom:8px"></div><div class="sk" style="height:56px;margin-bottom:8px;opacity:.6"></div><div class="sk" style="height:56px;opacity:.35"></div>`;
-  if(!tasks.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:32px 20px;text-align:center;margin-top:4px">
+  if(!tasks.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
     <div style="font-size:24px;margin-bottom:8px">📋</div>
-    <div style="font-size:13px;color:#9b9794">오늘 처리할 업무를 입력해주세요.</div>
-    <div style="font-size:11px;color:#b0ada8;margin-top:4px">Notion DB에서 직접 추가해도 반영됩니다</div></div>`;
+    <div style="font-size:13px;color:#9b9794">이 날 등록된 업무가 없어요.</div>
+    <div style="font-size:11px;color:#b0ada8;margin-top:4px">위 입력창에서 추가하거나 Notion DB에서 날짜를 지정해주세요</div></div>`;
   const inc=tasks.filter(t=>!t.completed),dn=tasks.filter(t=>t.completed);
   let h=inc.map(t=>tRow(t,ac,false)).join('');
   if(dn.length){
@@ -409,55 +542,106 @@ function tRow(t,ac,dim){
 }
 
 function rSched(sched){
-  if(S.sL&&!sched.length)return`<div class="sk" style="height:88px;margin-bottom:12px"></div><div class="sk" style="height:88px;margin-bottom:12px;opacity:.6"></div><div class="sk" style="height:88px;opacity:.35"></div>`;
-  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:20px;text-align:center;color:#9b9794;font-size:12px">고정 스케줄 없음 — Notion 📌 고정 스케줄 DB에서 추가하세요</div>`;
+  if(S.sL&&!sched.length)return`<div class="sk" style="height:80px;margin-bottom:10px"></div><div class="sk" style="height:80px;margin-bottom:10px;opacity:.6"></div>`;
+  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:16px;text-align:center;color:#9b9794;font-size:12px">고정 스케줄 없음</div>`;
   return sched.map(s=>{
     const st=TS[s.type]||TS['유동'],fl=s.slot==='유동';
-    return`<div style="background:${fl?'#faf9f7':st.bg};border:1px solid ${fl?'#e8e4de':st.d+'33'};
-      border-radius:10px;padding:14px 16px;margin-bottom:12px;${fl?'border-style:dashed':''}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-size:9px;background:${fl?'#f0eee9':st.d+'18'};color:${fl?'#9b9794':st.t};
-          border:1px solid ${fl?'#e8e4de':st.d+'33'};border-radius:4px;padding:2px 7px;font-weight:700">${s.type||'유동'}</span>
-        <span style="font-size:11px;color:${fl?'#9b9794':st.t};font-weight:600">${SL[s.slot]||s.slot}</span>
+    return`<div style="background:${fl?'#faf9f7':st.bg};border:1px ${fl?'dashed':'solid'} ${fl?'#e8e4de':st.d+'33'};border-radius:10px;padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span style="font-size:9px;background:${fl?'#f0eee9':st.d+'18'};color:${fl?'#9b9794':st.t};border:1px solid ${fl?'#e8e4de':st.d+'33'};border-radius:4px;padding:2px 7px;font-weight:700">${s.type||'유동'}</span>
+        <span style="font-size:10px;color:${fl?'#9b9794':st.t};font-weight:600">${SL[s.slot]||s.slot}</span>
         ${s.duration?`<span style="font-size:10px;color:${fl?'#b0ada8':st.d};margin-left:auto;font-weight:700">${esc(s.duration)}</span>`:''}
       </div>
-      <div style="font-size:13px;font-weight:700;color:#1c1a17;margin-bottom:6px">${esc(s.label)}</div>
-      ${s.desc?`<p style="margin:0;font-size:11px;color:#6b6762;line-height:1.65">${esc(s.desc)}</p>`:''}
+      <div style="font-size:12px;font-weight:700;color:#1c1a17;margin-bottom:4px">${esc(s.label)}</div>
+      ${s.desc?`<p style="margin:0;font-size:10px;color:#6b6762;line-height:1.6">${esc(s.desc)}</p>`:''}
     </div>`;
   }).join('');
 }
 
-function rProg(){
-  return DAYS.map((d,i)=>{
-    const ts=S.tasks[`${i}-${S.user}`]||[],tot=ts.length,dn=ts.filter(t=>t.completed).length;
-    const pct=tot?Math.round(dn/tot*100):0,nl=S.tasks[`${i}-${S.user}`]===undefined;
-    return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer" onclick="selDay(${i})">
-      <span style="font-size:10px;color:${i===S.day?d.c:'#9b9794'};font-weight:700;width:14px">${d.d}</span>
+function rWeekProg(){
+  // 이번 주 월~금 날짜 계산
+  const n=getKSTNow();
+  const dow=n.getUTCDay()||7;
+  const mon=new Date(n.getTime());mon.setUTCDate(n.getUTCDate()+(1-dow));
+  const weekDates=Array.from({length:5},(_,i)=>{
+    const d=new Date(mon.getTime());d.setUTCDate(mon.getUTCDate()+i);
+    return`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  });
+  const dayColors=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
+  return weekDates.map((ds,i)=>{
+    const ts=S.tasks[`${ds}-${S.user}`]||[];
+    const tot=ts.length,dn=ts.filter(t=>t.completed).length;
+    const pct=tot?Math.round(dn/tot*100):0;
+    const nl=S.tasks[`${ds}-${S.user}`]===undefined;
+    const isSelected=ds===S.selectedDate;
+    return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer" onclick="selectDate('${ds}')">
+      <span style="font-size:10px;color:${isSelected?dayColors[i]:'#9b9794'};font-weight:700;width:14px">${WEEKDAY_KR[i]}</span>
       <div style="flex:1;height:4px;background:#ede9e3;border-radius:2px;overflow:hidden">
-        ${nl?`<div style="height:100%;width:35%" class="sk"></div>`:`<div style="height:100%;width:${pct}%;background:${d.c};border-radius:2px;transition:width .3s"></div>`}
+        ${nl?`<div style="height:100%;width:30%" class="sk"></div>`:`<div style="height:100%;width:${pct}%;background:${dayColors[i]};border-radius:2px;transition:width .3s"></div>`}
       </div>
       <span style="font-size:10px;color:#9b9794;width:36px;text-align:right">${nl?'…':tot?`${dn}/${tot}`:'—'}</span>
     </div>`;
   }).join('');
 }
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    이벤트
-═══════════════════════════════════════════ */
-function selDay(i){S.day=i;render();loadTasks(i,S.user);setTimeout(()=>loadSched(i,S.user),400);setTimeout(()=>{const e=document.getElementById('ti');if(e)e.focus();},60);}
-function selUser(u){S.user=u;render();loadTasks(S.day,u);setTimeout(()=>loadSched(S.day,u),400);}
+═══════════════════════════════════════ */
+function selectDate(ds){
+  S.selectedDate=ds;
+  render();
+  const widx=dateToWeekday(ds);
+  loadTasksByDate(ds,S.user);
+  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>{const e=document.getElementById('ti');if(e)e.focus();},60);
+}
+function selUser(u){
+  S.user=u;S.tasks={};render();
+  loadTasksByDate(S.selectedDate,u);
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx!==null)setTimeout(()=>loadSched(widx,u),400);
+}
+function moveMonth(dir){
+  S.calMonth+=dir;
+  if(S.calMonth>11){S.calMonth=0;S.calYear++;}
+  if(S.calMonth<0){S.calMonth=11;S.calYear--;}
+  render();
+}
+function goToday(){
+  const n=getKSTNow();
+  S.calYear=n.getUTCFullYear();S.calMonth=n.getUTCMonth();
+  S.selectedDate=todayStr();render();
+  loadTasksByDate(S.selectedDate,S.user);
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+}
 function addTask(){const e=document.getElementById('ti'),t=(e?.value||'').trim();if(!t)return;e.value='';doAdd(t);}
 function toggle(id){doToggle(id);}
 function del(id){doDel(id);}
-function clearDone(){if(!confirm('완료된 업무를 모두 삭제할까요?'))return;(S.tasks[`${S.day}-${S.user}`]||[]).filter(t=>t.completed).forEach(t=>doDel(t.id));}
-function refresh(){delete S.tasks[`${S.day}-${S.user}`];delete S.sched[`${S.day}-${S.user}`];render();loadTasks(S.day,S.user);setTimeout(()=>loadSched(S.day,S.user),400);}
-function resetToken(){if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;localStorage.removeItem(TOKEN_KEY);S.token='';S.tasks={};S.sched={};render();}
+function clearDone(){
+  if(!confirm('완료된 업무를 모두 삭제할까요?'))return;
+  (S.tasks[`${S.selectedDate}-${S.user}`]||[]).filter(t=>t.completed).forEach(t=>doDel(t.id));
+}
+function refresh(){
+  S.tasks={};S.sched={};render();
+  loadTasksByDate(S.selectedDate,S.user);
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+}
+function resetToken(){
+  if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;
+  localStorage.removeItem(TOKEN_KEY);S.token='';S.tasks={};S.sched={};render();
+}
 
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    초기화
-═══════════════════════════════════════════ */
+═══════════════════════════════════════ */
 render();
-if(S.token){loadTasks(S.day,S.user);setTimeout(()=>loadSched(S.day,S.user),400);}
+if(S.token){
+  loadTasksByDate(S.selectedDate,S.user);
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+}
 </script>
 </body>
 </html>
