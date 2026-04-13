@@ -1,0 +1,17 @@
+# 토큰 / 시크릿
+*.txt
+.env
+.env.*
+*token*
+*secret*
+
+# Claude Code 설정
+claude_desktop_config.json
+
+# Node
+node_modules/
+.netlify/
+
+# OS
+.DS_Store
+Thumbs.db
