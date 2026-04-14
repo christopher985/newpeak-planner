@@ -581,12 +581,13 @@ function tRow(t,ac,dim){
       cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">
       ${t.completed?`<span style="font-size:10px;color:#fff;font-weight:700">✓</span>`:''}
     </button>
-    <div style="flex:1;min-width:0">
+    <div onclick="openMemo('${t.id}')" style="flex:1;min-width:0;cursor:pointer">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${t.priority&&!dim?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:''}
         ${us&&!dim?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:''}
         ${t.carried&&!dim?`<span style="font-size:9px;background:#f5f3ef;color:#9b9794;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #e8e4de">이관</span>`:''}
         <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
+        ${t.memo?`<span style="font-size:9px;color:#9b9794;margin-left:2px">📝</span>`:''}
       </div>
       ${tags}
     </div>
