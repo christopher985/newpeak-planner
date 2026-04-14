@@ -1,3 +1,17 @@
 {
-  "defaultMode": "autoApprove"
+  "defaultMode": "autoApprove",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const{execSync}=require('child_process');try{const s=execSync('git status --porcelain',{encoding:'utf8'}).trim();if(!s)process.exit(0);execSync('git add -A');execSync('git commit -m \\\"auto: update via Claude Code\\\"');execSync('git push origin main');console.log(JSON.stringify({suppressOutput:true}));}catch(e){}});\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }
