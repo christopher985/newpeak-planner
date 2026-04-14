@@ -237,7 +237,7 @@ async function loadSched(user){
 async function doAdd(text){
   const k=`${S.selectedDate}-${S.user}`,tid=`t${Date.now()}`;
   const weekday=dateToKrWeekday(S.selectedDate);
-  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,_p:true};
+  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',_p:true};
   (S.tasks[k]=S.tasks[k]||[]).push(tmp);render();
   try{
     const props={
