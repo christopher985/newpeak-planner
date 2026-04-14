@@ -430,9 +430,6 @@ function rTeamBar(){
         <span style="width:6px;height:6px;border-radius:50%;background:${tc};flex-shrink:0"></span>
         <span style="font-size:11px;font-weight:700;color:${tc}">${esc(S.team)} 팀</span>
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${members.map(m=>{const c=UC[m]||tc;return`<span style="font-size:10px;background:${c}22;color:${c};border:1px solid ${c}44;border-radius:4px;padding:2px 8px;font-weight:600">${esc(m)}</span>`;}).join('')}
-      </div>
     </div>
   </div>`;
 }
