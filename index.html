@@ -563,19 +563,39 @@ function rCalendar(){
   for(let d=1;d<=lastDate;d++)cells.push({d,ds:`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:false});
   const rem=(Math.ceil(cells.length/7)*7)-cells.length;
   for(let d=1;d<=rem;d++){const nm=month+1>11?0:month+1,ny=month+1>11?year+1:year;cells.push({d,ds:`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
+  const isDesign=S.team==='디자인';
+  // 디자인 탭: 데드라인별 요청 수 집계
+  const dlCount={};
+  if(isDesign&&S.designReqs){S.designReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
+  const dlMax=Math.max(1,...Object.values(dlCount));
+
   const cellHtml=cells.map(({d,ds,otherMonth})=>{
     const isToday=ds===today,isSel=ds===S.selectedDate;
     const dow=new Date(ds+'T00:00:00Z').getUTCDay();
     const isSun=dow===0,isSat=dow===6;
-    const k=`${ds}-${S.user}`,dt=S.tasks[k]||[];
-    const hasTodo=dt.filter(t=>!t.completed).length>0,hasDone=dt.filter(t=>t.completed).length>0;
     let cls='cal-cell'+(otherMonth?' other-month':'')+(isToday?' today':'')+(isSel?' selected':'')+(isSun?' sun':'')+(isSat?' sat':'');
     let ns=`font-size:12px;font-weight:${isToday||isSel?700:400};`;
     if(isToday||isSel)ns=`width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;background:${isToday?'#e05c1a':'#1c1a17'};color:#fff!important;`;
     else if(!otherMonth)ns+=`color:${isSun?'#ef4444':isSat?'#3b82f6':'#1c1a17'};`;
-    return`<div class="${cls}" onclick="selectDate('${ds}')" style="padding:4px 0">
+
+    let dots='';
+    let bgStyle='';
+    if(isDesign){
+      const cnt=dlCount[ds]||0;
+      if(cnt>0&&!otherMonth){
+        const intensity=Math.min(cnt/dlMax,1);
+        const alpha=Math.round(10+intensity*35);
+        bgStyle=`background:rgba(139,92,246,0.${String(alpha).padStart(2,'0')});`;
+        dots=`<span style="font-size:9px;font-weight:700;color:#7c3aed;line-height:1">${cnt}</span>`;
+      }
+    } else {
+      const k=`${ds}-${S.user}`,dt=S.tasks[k]||[];
+      const hasTodo=dt.filter(t=>!t.completed).length>0,hasDone=dt.filter(t=>t.completed).length>0;
+      dots=`${hasTodo?'<div class="cal-dot" style="background:#e05c1a"></div>':''}${hasDone?'<div class="cal-dot" style="background:#22c55e"></div>':''}`;
+    }
+    return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
-      <div class="cal-dots">${hasTodo?'<div class="cal-dot" style="background:#e05c1a"></div>':''}${hasDone?'<div class="cal-dot" style="background:#22c55e"></div>':''}</div>
+      <div class="cal-dots">${dots}</div>
     </div>`;
   }).join('');
   return`<div class="hpad" style="background:#fff;border-bottom:1px solid #e8e4de;padding-top:16px;padding-bottom:16px">
@@ -1201,7 +1221,7 @@ function render(){
     ${toastHtml}
     ${rTeamBar()}
     ${rHeader()}
-    ${isDesignTeam?'':rCalendar()}
+    ${rCalendar()}
     <div class="main-pad" style="max-width:1160px;margin:0 auto">
       ${mainContent}
     </div>
