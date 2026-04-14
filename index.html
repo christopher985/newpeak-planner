@@ -210,6 +210,7 @@ function mapTask(p){
     dateStr:p.properties['날짜']?.date?.start||null,
     brand:p.properties['브랜드']?.select?.name||null,
     area:p.properties['영역']?.select?.name||null,
+    memo:txt(p.properties['메모'])||'',
   };
 }
 async function loadSched(user){
