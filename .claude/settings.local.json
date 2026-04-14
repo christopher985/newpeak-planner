@@ -9,7 +9,9 @@
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
       "Bash(git push:*)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(npx netlify-cli:*)",
+      "Bash(curl -sI \"https://harmonious-eclair-523271.netlify.app/\")"
     ]
   }
 }
