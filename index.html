@@ -42,6 +42,7 @@
   .hpad{padding-left:24px;padding-right:24px}
   @media(max-width:768px){
     .perf-grid{grid-template-columns:1fr!important;gap:12px}
+    .perf-col-mid{order:-1}
     .default-layout{flex-direction:column!important;gap:12px}
     .default-sidebar{width:100%!important}
     .main-pad{padding:14px 12px 32px!important}
@@ -642,8 +643,8 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
   const dateTitle=fmtDateKr(S.selectedDate);
   const skeletons=`<div class="sk" style="height:52px;margin-bottom:7px"></div><div class="sk" style="height:52px;margin-bottom:7px;opacity:.7"></div><div class="sk" style="height:52px;opacity:.4"></div>`;
 
-  // 중간 컬럼 — 추가 입력 + 고정업무 + 주간현황
-  const midCol=`<div style="display:flex;flex-direction:column;gap:12px">
+  // 중간 컬럼 — 추가 입력 + 고정업무
+  const midCol=`<div class="perf-col-mid" style="display:flex;flex-direction:column;gap:12px">
     <!-- 날짜 타이틀 -->
     <div style="display:flex;align-items:center;gap:8px">
       <span style="width:3px;height:16px;border-radius:2px;background:${ac};display:inline-block;flex-shrink:0"></span>
@@ -686,7 +687,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
 
   return`<div class="perf-grid">
     <!-- 좌: 미완료 -->
-    <div>
+    <div class="perf-col-inc">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:3px;height:14px;border-radius:2px;background:${ac};display:inline-block"></span>
