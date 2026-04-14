@@ -33,7 +33,7 @@
   .cal-num{font-size:12px;font-weight:500;line-height:1}
   .cal-dots{display:flex;gap:2px;justify-content:center;min-height:5px}
   .cal-dot{width:4px;height:4px;border-radius:50%}
-  .brand-sel{background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;color:#1c1a17;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;padding-right:20px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b9794'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
+
   .team-sel{background:#2c2a27;border:1.5px solid #3a3835;border-radius:7px;padding:6px 28px 6px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b9794'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
   .perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:flex-start}
   .default-layout{display:flex;gap:20px;align-items:flex-start}
@@ -98,8 +98,8 @@ const UC = {
 };
 const DAY_NAMES = ['일','월','화','수','목','금','토'];
 const WEEKDAY_KR = ['월','화','수','목','금'];
-const SLOT_ORDER = ['오전','점심이후','오후','유동'];
-const SL = {오전:'오전',점심이후:'점심 이후 ~ 14:00',오후:'오후 전반',유동:'오후 후반 (유동)'};
+const SLOT_ORDER = ['오전','오후'];
+const SL = {오전:'오전',오후:'오후'};
 const TS = {
   '분석':{bg:'#eff6ff',t:'#1d4ed8',d:'#3b82f6'},
   '운영':{bg:'#f0fdf4',t:'#15803d',d:'#22c55e'},
@@ -141,6 +141,7 @@ let S = {
   toast: null, testing: false,
   editingSched: null,
   addingSched: null,
+  editingTask: null,
 };
 
 /* ══════════════════════════════════════
@@ -211,21 +212,19 @@ function mapTask(p){
     area:p.properties['영역']?.select?.name||null,
   };
 }
-async function loadSched(widx,user){
-  const k=`${widx}-${user}`;
+async function loadSched(user){
+  const k=user;
   if(S.sched[k]!==undefined)return;
   S.sL=true;render();
-  const weekday=WEEKDAY_KR[widx];
   try{
     const res=await notion('POST',`/databases/${SCHED_DB}/query`,{
       filter:{and:[
-        {property:'요일',select:{equals:weekday}},
         {property:'활성',checkbox:{equals:true}},
         {or:[{property:'담당자',select:{equals:user}},{property:'담당자',select:{equals:'공통'}}]},
       ]},
     });
     S.sched[k]=res.results
-      .map(p=>({id:p.id,label:txt(p.properties['업무명']),slot:p.properties['시간대']?.select?.name||'유동',type:p.properties['업무타입']?.select?.name||null,duration:txt(p.properties['소요시간']),desc:txt(p.properties['설명'])}))
+      .map(p=>({id:p.id,label:txt(p.properties['업무명']),slot:p.properties['시간대']?.select?.name||'오전',weekday:p.properties['요일']?.select?.name||null,type:p.properties['업무타입']?.select?.name||null,duration:txt(p.properties['소요시간']),desc:txt(p.properties['설명'])}))
       .sort((a,b)=>SLOT_ORDER.indexOf(a.slot)-SLOT_ORDER.indexOf(b.slot));
   }catch(e){S.sched[k]=[];}
   S.sL=false;render();
@@ -269,35 +268,48 @@ async function doDel(id){
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('삭제됨');}
   catch(e){S.tasks[k]=prev;toast('삭제 실패',true);render();}
 }
-async function doUpdateBrand(id,brand){
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
+function startEditTask(id){
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===id);
   if(!t)return;
-  const prev=t.brand;t.brand=brand;render();
-  try{await notion('PATCH',`/pages/${id}`,{properties:{'브랜드':{select:{name:brand}}}});toast('브랜드 변경됨');}
-  catch(e){t.brand=prev;toast('변경 실패: '+e.message,true);render();}
+  S.editingTask={id,text:t.text,brand:t.brand||'',area:t.area||''};
+  render();
 }
-async function doUpdateArea(id,area){
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
+function cancelEditTask(){S.editingTask=null;render();}
+function setEditTaskField(field,val){if(S.editingTask)S.editingTask[field]=val;}
+function toggleEditTaskField(field,val){if(S.editingTask)S.editingTask[field]=S.editingTask[field]===val?'':val;}
+async function saveEditTask(){
+  if(!S.editingTask)return;
+  const e=S.editingTask;
+  if(!e.text.trim()){toast('업무명을 입력해주세요',true);return;}
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===e.id);
   if(!t)return;
-  const prev=t.area;t.area=area;render();
-  try{await notion('PATCH',`/pages/${id}`,{properties:{'영역':{select:{name:area}}}});toast('영역 변경됨');}
-  catch(e){t.area=prev;toast('변경 실패: '+e.message,true);render();}
+  const prev={text:t.text,brand:t.brand,area:t.area};
+  t.text=e.text.trim();t.brand=e.brand||null;t.area=e.area||null;
+  S.editingTask=null;render();
+  try{
+    const props={'업무명':{title:[{text:{content:t.text}}]}};
+    if(e.brand)props['브랜드']={select:{name:e.brand}};
+    else props['브랜드']={select:null};
+    if(e.area)props['영역']={select:{name:e.area}};
+    else props['영역']={select:null};
+    await notion('PATCH',`/pages/${e.id}`,{properties:props});
+    toast('수정됨');
+  }catch(err){Object.assign(t,prev);toast('수정 실패: '+err.message,true);render();}
 }
 async function doUpdateSched(id,updates){
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx===null)return;
-  const k=`${widx}-${S.user}`;
+  const k=S.user;
   const arr=S.sched[k]||[];
   const s=arr.find(x=>x.id===id);
   if(!s)return;
-  const prev={label:s.label,slot:s.slot,type:s.type,duration:s.duration,desc:s.desc};
+  const prev={label:s.label,slot:s.slot,weekday:s.weekday,type:s.type,duration:s.duration,desc:s.desc};
   Object.assign(s,updates);
   S.editingSched=null;render();
   try{
     const props={};
     if(updates.label!==undefined)props['업무명']={title:[{text:{content:updates.label}}]};
     if(updates.slot!==undefined)props['시간대']={select:{name:updates.slot}};
-    if(updates.type!==undefined)props['업무타입']={select:{name:updates.type}};
+    if(updates.weekday!==undefined)props['요일']={select:{name:updates.weekday}};
+    if(updates.type!==undefined&&updates.type)props['업무타입']={select:{name:updates.type}};
     if(updates.duration!==undefined)props['소요시간']={rich_text:[{text:{content:updates.duration}}]};
     if(updates.desc!==undefined)props['설명']={rich_text:[{text:{content:updates.desc}}]};
     await notion('PATCH',`/pages/${id}`,{properties:props});
@@ -305,20 +317,16 @@ async function doUpdateSched(id,updates){
   }catch(e){Object.assign(s,prev);toast('수정 실패: '+e.message,true);render();}
 }
 function startEditSched(id){
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx===null)return;
-  const k=`${widx}-${S.user}`;
+  const k=S.user;
   const s=(S.sched[k]||[]).find(x=>x.id===id);
   if(!s)return;
-  S.editingSched={id,label:s.label,slot:s.slot,type:s.type||'유동',duration:s.duration||'',desc:s.desc||''};
+  S.editingSched={id,label:s.label,weekday:s.weekday||'월',slot:s.slot||'오전',type:s.type||'',duration:s.duration||'',desc:s.desc||''};
   render();
 }
 function cancelEditSched(){S.editingSched=null;render();}
 async function doDelSched(id){
   if(!confirm('이 고정업무를 삭제할까요?'))return;
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx===null)return;
-  const k=`${widx}-${S.user}`;
+  const k=S.user;
   const prev=[...(S.sched[k]||[])];
   S.sched[k]=(S.sched[k]||[]).filter(x=>x.id!==id);render();
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('고정업무 삭제됨');}
@@ -327,11 +335,12 @@ async function doDelSched(id){
 function saveEditSched(){
   if(!S.editingSched)return;
   const e=S.editingSched;
-  doUpdateSched(e.id,{label:e.label,slot:e.slot,type:e.type,duration:e.duration,desc:e.desc});
+  doUpdateSched(e.id,{label:e.label,weekday:e.weekday,slot:e.slot,type:e.type,duration:e.duration,desc:e.desc});
 }
 function setEditSchedField(field,val){if(S.editingSched)S.editingSched[field]=val;}
 function startAddSched(){
-  S.addingSched={label:'',slot:'오전',type:'유동',duration:'',desc:''};
+  const wd=dateToKrWeekday(S.selectedDate);
+  S.addingSched={label:'',weekday:wd||'월',slot:'오전',type:'',duration:'',desc:''};
   S.editingSched=null;
   render();
 }
@@ -339,25 +348,23 @@ function cancelAddSched(){S.addingSched=null;render();}
 function setAddSchedField(field,val){if(S.addingSched)S.addingSched[field]=val;}
 async function saveAddSched(){
   if(!S.addingSched||!S.addingSched.label.trim()){toast('업무명을 입력해주세요',true);return;}
+  if(!S.addingSched.weekday){toast('요일을 선택해주세요',true);return;}
   const a=S.addingSched;
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx===null)return;
-  const weekday=WEEKDAY_KR[widx];
   S.addingSched=null;render();
   try{
     const props={
       '업무명':{title:[{text:{content:a.label.trim()}}]},
-      '요일':{select:{name:weekday}},
       '담당자':{select:{name:S.user}},
       '활성':{checkbox:true},
       '시간대':{select:{name:a.slot}},
-      '업무타입':{select:{name:a.type}},
+      '요일':{select:{name:a.weekday}},
     };
+    if(a.type)props['업무타입']={select:{name:a.type}};
     if(a.duration.trim())props['소요시간']={rich_text:[{text:{content:a.duration.trim()}}]};
     if(a.desc.trim())props['설명']={rich_text:[{text:{content:a.desc.trim()}}]};
     await notion('POST','/pages',{parent:{database_id:SCHED_DB},properties:props});
-    delete S.sched[`${widx}-${S.user}`];
-    await loadSched(widx,S.user);
+    delete S.sched[S.user];
+    await loadSched(S.user);
     toast('고정업무 추가됨');
   }catch(e){toast('추가 실패: '+e.message,true);}
   render();
@@ -461,7 +468,51 @@ function rHeader(){
 function tRow(t,ac,dim){
   const us=t.urgency?(US[t.urgency]||US['보통']):null;
   const bc=t.brand?BRAND_COLOR[t.brand]||'#9b9794':null;
+  const ac2=t.area?AREA_COLOR[t.area]||'#9b9794':null;
   const isPerfTeam=S.team==='퍼포먼스';
+  const isEditing=S.editingTask&&S.editingTask.id===t.id;
+
+  if(isEditing&&!dim){
+    const e=S.editingTask;
+    const ebc=e.brand?BRAND_COLOR[e.brand]||'#9b9794':null;
+    const eac=e.area?AREA_COLOR[e.area]||'#9b9794':null;
+    return`<div class="row" style="background:#fff;border:2px solid ${ac};border-radius:10px;padding:12px;margin-bottom:7px;box-shadow:0 2px 8px ${ac}22">
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:10px;font-weight:700;color:${ac};letter-spacing:.5px">수정 중</span>
+          <div style="display:flex;gap:5px">
+            <button onclick="cancelEditTask()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
+            <button onclick="saveEditTask()" style="background:${ac};border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+          </div>
+        </div>
+        <input value="${esc(e.text)}" oninput="setEditTaskField('text',this.value)"
+          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:7px 10px;font-size:13px;color:#1c1a17;outline:none"
+          onkeydown="if(event.key==='Enter')saveEditTask()"/>
+        ${isPerfTeam?`<div>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">브랜드</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const sel=e.brand===b;return`<button onclick="toggleEditTaskField('brand','${esc(b)}');render()"
+              style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">영역</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=e.area===a;return`<button onclick="toggleEditTaskField('area','${esc(a)}');render()"
+              style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
+          </div>
+        </div>`:''}
+      </div>
+    </div>`;
+  }
+
+  const tags=isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px">
+    ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
+    ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
+  </div>`:'';
+
   return`<div class="row" style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
     box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}">
@@ -472,26 +523,19 @@ function tRow(t,ac,dim){
       ${t.completed?`<span style="font-size:10px;color:#fff;font-weight:700">✓</span>`:''}
     </button>
     <div style="flex:1;min-width:0">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${isPerfTeam&&!dim?4:0}px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${t.priority&&!dim?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:''}
         ${us&&!dim?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:''}
         ${t.carried&&!dim?`<span style="font-size:9px;background:#f5f3ef;color:#9b9794;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #e8e4de">이관</span>`:''}
         <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
       </div>
-      ${isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
-        <select class="brand-sel" onchange="doUpdateBrand('${t.id}',this.value)" style="font-size:10px;padding:2px 18px 2px 6px;color:#9b9794">
-          <option value="" ${!t.brand?'selected':''}>브랜드</option>
-          ${BRANDS.map(b=>`<option value="${esc(b)}" ${t.brand===b?'selected':''}>${b}</option>`).join('')}
-        </select>
-        ${t.area?`<span style="font-size:9px;background:${(AREA_COLOR[t.area]||'#9b9794')}18;color:${AREA_COLOR[t.area]||'#9b9794'};border:1px solid ${(AREA_COLOR[t.area]||'#9b9794')}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
-        <select class="brand-sel" onchange="doUpdateArea('${t.id}',this.value)" style="font-size:10px;padding:2px 18px 2px 6px;color:#9b9794">
-          <option value="" ${!t.area?'selected':''}>영역</option>
-          ${AREAS.map(a=>`<option value="${esc(a)}" ${t.area===a?'selected':''}>${a}</option>`).join('')}
-        </select>
-      </div>`:''}
+      ${tags}
     </div>
-    ${t._p?`<div class="sp"></div>`:`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;flex-shrink:0;opacity:.6;line-height:1">×</button>`}
+    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+      ${t._p?`<div class="sp"></div>`:dim?`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;opacity:.6;line-height:1">×</button>`:`
+        <button onclick="startEditTask('${t.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
+        <button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;opacity:.6;line-height:1">×</button>`}
+    </div>
   </div>`;
 }
 
@@ -511,7 +555,6 @@ function rTaskList(tasks,ac,dim){
 function rSchedAddForm(){
   if(!S.addingSched)return'';
   const a=S.addingSched;
-  const typeKeys=Object.keys(TS);
   return`<div style="background:#fff;border:2px solid #10b981;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 2px 8px rgba(16,185,129,0.12)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <span style="font-size:10px;font-weight:700;color:#10b981;letter-spacing:.5px">새 고정업무</span>
@@ -529,94 +572,97 @@ function rSchedAddForm(){
       </div>
       <div style="display:flex;gap:8px">
         <div style="flex:1">
-          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무타입</div>
-          <select onchange="setAddSchedField('type',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
-            ${typeKeys.map(k=>`<option value="${esc(k)}" ${a.type===k?'selected':''}>${esc(k)}</option>`).join('')}
-          </select>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">요일</div>
+          <div style="display:flex;gap:3px">
+            ${WEEKDAY_KR.map(w=>`<button onclick="setAddSchedField('weekday','${w}');render()"
+              style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${a.weekday===w?'#1c1a17':'#f5f3ef'};border:1px solid ${a.weekday===w?'#1c1a17':'#e8e4de'};color:${a.weekday===w?'#fff':'#6b6762'}">${w}</button>`).join('')}
+          </div>
         </div>
-        <div style="flex:1">
+        <div style="flex-shrink:0;width:90px">
           <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
-          <select onchange="setAddSchedField('slot',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
-            ${SLOT_ORDER.map(sl=>`<option value="${esc(sl)}" ${a.slot===sl?'selected':''}>${esc(SL[sl]||sl)}</option>`).join('')}
-          </select>
+          <div style="display:flex;gap:3px">
+            ${SLOT_ORDER.map(sl=>`<button onclick="setAddSchedField('slot','${sl}');render()"
+              style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${a.slot===sl?'#1c1a17':'#f5f3ef'};border:1px solid ${a.slot===sl?'#1c1a17':'#e8e4de'};color:${a.slot===sl?'#fff':'#6b6762'}">${sl}</button>`).join('')}
+          </div>
         </div>
       </div>
       <div>
-        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">소요시간</div>
-        <input value="${esc(a.duration)}" oninput="setAddSchedField('duration',this.value)" placeholder="예: 30분, 1시간"
-          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
-      </div>
-      <div>
-        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명</div>
-        <textarea oninput="setAddSchedField('desc',this.value)" placeholder="설명 (선택)"
-          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;resize:vertical;min-height:40px;font-family:inherit">${esc(a.desc)}</textarea>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명 (선택)</div>
+        <input value="${esc(a.desc)}" oninput="setAddSchedField('desc',this.value)" placeholder="간단한 메모"
+          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none"/>
       </div>
     </div>
   </div>`;
 }
 function rSched(sched){
   const addForm=rSchedAddForm();
-  if(S.sL&&!sched.length)return`<div class="sk" style="height:70px;margin-bottom:8px"></div><div class="sk" style="height:70px;opacity:.6"></div>${addForm}`;
-  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:14px;text-align:center;color:#9b9794;font-size:12px">고정 스케줄 없음</div>${addForm}`;
-  const typeKeys=Object.keys(TS);
-  return sched.map(s=>{
-    const isEditing=S.editingSched&&S.editingSched.id===s.id;
-    const st=TS[s.type]||TS['유동'],fl=s.slot==='유동';
-    if(isEditing){
-      const e=S.editingSched;
-      return`<div style="background:#fff;border:2px solid #e05c1a;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 2px 8px rgba(224,92,26,0.12)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:10px;font-weight:700;color:#e05c1a;letter-spacing:.5px">수정 중</span>
-          <div style="display:flex;gap:5px">
-            <button onclick="cancelEditSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
-            <button onclick="saveEditSched()" style="background:#e05c1a;border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div>
-            <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무명</div>
-            <input value="${esc(e.label)}" oninput="setEditSchedField('label',this.value)"
-              style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
-          </div>
-          <div style="display:flex;gap:8px">
-            <div style="flex:1">
-              <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무타입</div>
-              <select onchange="setEditSchedField('type',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
-                ${typeKeys.map(k=>`<option value="${esc(k)}" ${e.type===k?'selected':''}>${esc(k)}</option>`).join('')}
-              </select>
+  if(S.sL&&!sched.length)return`<div class="sk" style="height:52px;margin-bottom:8px"></div><div class="sk" style="height:52px;opacity:.6"></div>${addForm}`;
+  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:14px;text-align:center;color:#9b9794;font-size:12px">이 요일에 등록된 고정업무 없음</div>${addForm}`;
+  const slotGroups={};SLOT_ORDER.forEach(sl=>{slotGroups[sl]=sched.filter(s=>s.slot===sl);});
+  return SLOT_ORDER.map(sl=>{
+    const items=slotGroups[sl];
+    if(!items.length)return'';
+    const slotColor=sl==='오전'?'#3b82f6':'#f59e0b';
+    return`<div style="margin-bottom:10px">
+      <div style="font-size:9px;font-weight:700;color:${slotColor};margin-bottom:5px;letter-spacing:.5px">${sl}</div>
+      ${items.map(s=>{
+        const isEditing=S.editingSched&&S.editingSched.id===s.id;
+        if(isEditing){
+          const e=S.editingSched;
+          return`<div style="background:#fff;border:2px solid #e05c1a;border-radius:10px;padding:12px;margin-bottom:6px;box-shadow:0 2px 8px rgba(224,92,26,0.12)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:10px;font-weight:700;color:#e05c1a;letter-spacing:.5px">수정 중</span>
+              <div style="display:flex;gap:5px">
+                <button onclick="cancelEditSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
+                <button onclick="saveEditSched()" style="background:#e05c1a;border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+              </div>
             </div>
-            <div style="flex:1">
-              <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
-              <select onchange="setEditSchedField('slot',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
-                ${SLOT_ORDER.map(sl=>`<option value="${esc(sl)}" ${e.slot===sl?'selected':''}>${esc(SL[sl]||sl)}</option>`).join('')}
-              </select>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div>
+                <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무명</div>
+                <input value="${esc(e.label)}" oninput="setEditSchedField('label',this.value)"
+                  style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
+              </div>
+              <div style="display:flex;gap:8px">
+                <div style="flex:1">
+                  <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">요일</div>
+                  <div style="display:flex;gap:3px">
+                    ${WEEKDAY_KR.map(w=>`<button onclick="setEditSchedField('weekday','${w}');render()"
+                      style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
+                      background:${e.weekday===w?'#1c1a17':'#f5f3ef'};border:1px solid ${e.weekday===w?'#1c1a17':'#e8e4de'};color:${e.weekday===w?'#fff':'#6b6762'}">${w}</button>`).join('')}
+                  </div>
+                </div>
+                <div style="flex-shrink:0;width:90px">
+                  <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
+                  <div style="display:flex;gap:3px">
+                    ${SLOT_ORDER.map(sl2=>`<button onclick="setEditSchedField('slot','${sl2}');render()"
+                      style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
+                      background:${e.slot===sl2?'#1c1a17':'#f5f3ef'};border:1px solid ${e.slot===sl2?'#1c1a17':'#e8e4de'};color:${e.slot===sl2?'#fff':'#6b6762'}">${sl2}</button>`).join('')}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명 (선택)</div>
+                <input value="${esc(e.desc)}" oninput="setEditSchedField('desc',this.value)" placeholder="간단한 메모"
+                  style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none"/>
+              </div>
+            </div>
+          </div>`;
+        }
+        return`<div style="background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 10px;margin-bottom:6px;position:relative;transition:box-shadow .15s" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="width:3px;height:14px;border-radius:2px;background:${slotColor};display:inline-block;flex-shrink:0"></span>
+            <span style="font-size:12px;font-weight:700;color:#1c1a17;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span>
+            <div class="sched-edit-btn" style="opacity:0;transition:opacity .15s;display:flex;gap:3px;flex-shrink:0">
+              <button onclick="event.stopPropagation();startEditSched('${s.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
+              <button onclick="event.stopPropagation();doDelSched('${s.id}')" style="background:none;border:1px solid #fecaca;border-radius:4px;padding:2px 6px;font-size:9px;color:#ef4444;cursor:pointer">삭제</button>
             </div>
           </div>
-          <div>
-            <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">소요시간</div>
-            <input value="${esc(e.duration)}" oninput="setEditSchedField('duration',this.value)" placeholder="예: 30분, 1시간"
-              style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
-          </div>
-          <div>
-            <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명</div>
-            <textarea oninput="setEditSchedField('desc',this.value)" placeholder="설명 (선택)"
-              style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;resize:vertical;min-height:40px;font-family:inherit">${esc(e.desc)}</textarea>
-          </div>
-        </div>
-      </div>`;
-    }
-    return`<div style="background:${fl?'#faf9f7':st.bg};border:1px ${fl?'dashed':'solid'} ${fl?'#e8e4de':st.d+'33'};border-radius:10px;padding:10px 12px;margin-bottom:8px;transition:box-shadow .15s;position:relative" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
-        <span style="font-size:9px;background:${fl?'#f0eee9':st.d+'18'};color:${fl?'#9b9794':st.t};border:1px solid ${fl?'#e8e4de':st.d+'33'};border-radius:4px;padding:1px 5px;font-weight:700">${s.type||'유동'}</span>
-        <span style="font-size:10px;color:${fl?'#9b9794':st.t};font-weight:600">${SL[s.slot]||s.slot}</span>
-        ${s.duration?`<span style="font-size:10px;color:${fl?'#b0ada8':st.d};margin-left:auto;font-weight:700">${esc(s.duration)}</span>`:''}
-        <div class="sched-edit-btn" style="opacity:0;transition:opacity .15s;display:flex;gap:3px;margin-left:${s.duration?'4px':'auto'}">
-          <button onclick="event.stopPropagation();startEditSched('${s.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
-          <button onclick="event.stopPropagation();doDelSched('${s.id}')" style="background:none;border:1px solid #fecaca;border-radius:4px;padding:2px 6px;font-size:9px;color:#ef4444;cursor:pointer">삭제</button>
-        </div>
-      </div>
-      <div style="font-size:12px;font-weight:700;color:#1c1a17;margin-bottom:3px">${esc(s.label)}</div>
-      ${s.desc?`<p style="margin:0;font-size:10px;color:#6b6762;line-height:1.5">${esc(s.desc)}</p>`:''}
+          ${s.desc?`<div style="font-size:10px;color:#6b6762;margin-top:3px;margin-left:10px;line-height:1.4">${esc(s.desc)}</div>`:''}
+        </div>`;
+      }).join('')}
     </div>`;
   }).join('')+addForm;
 }
@@ -656,24 +702,23 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
           style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
           background:${sel?c:'#f5f3ef'};border:1.5px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
       </div>
-      <div style="display:flex;gap:7px">
-        <input id="ti" placeholder="업무 입력 후 Enter…"
+      <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:7px">
+        <input id="ti" placeholder="업무 입력 후 Enter…" enterkeyhint="send"
           style="flex:1;background:#f5f3ef;border:1.5px solid #e8e4de;border-radius:8px;
           padding:9px 12px;font-size:12px;color:#1c1a17;outline:none;transition:border-color .15s"
-          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"
-          onkeydown="if(event.key==='Enter')addTask()"/>
-        <button onclick="addTask()" style="background:${ac};border:none;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
-      </div>
+          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
+        <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
+      </form>
     </div>`}
     <!-- 고정업무 -->
-    ${!isWeekend?`<div>
+    <div>
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
         <span style="width:3px;height:14px;border-radius:2px;background:${ac};display:inline-block"></span>
         <span style="font-size:12px;font-weight:700;color:#1c1a17">고정 업무</span>
         <button onclick="startAddSched()" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:13px;color:#9b9794;display:flex;align-items:center;justify-content:center;margin-left:auto;line-height:1">+</button>
       </div>
       ${rSched(sched)}
-    </div>`:''}
+    </div>
   </div>`;
 
   return`<div class="perf-grid">
@@ -727,14 +772,13 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
         <div style="font-size:20px;margin-bottom:8px">🌿</div>
         <div style="font-size:13px;color:#9b9794">주말입니다. 푹 쉬세요!</div>
       </div>`:
-      `<div style="display:flex;gap:8px">
-        <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…"
+      `<form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:8px">
+        <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…" enterkeyhint="send"
           style="flex:1;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;
           padding:10px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)"
-          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"
-          onkeydown="if(event.key==='Enter')addTask()"/>
-        <button onclick="addTask()" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
-      </div>`}
+          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
+        <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
+      </form>`}
       <div>
         ${S.tL&&!all.length?`<div class="sk" style="height:56px;margin-bottom:8px"></div><div class="sk" style="height:56px;margin-bottom:8px;opacity:.6"></div><div class="sk" style="height:56px;opacity:.35"></div>`:''}
         ${!S.tL&&!all.length&&!isWeekend?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
@@ -747,14 +791,14 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
     </div>
     <div class="default-sidebar">
-      ${!isWeekend?`<div>
+      <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
           <span style="font-size:12px;font-weight:700;color:#1c1a17">고정 업무</span>
           <button onclick="startAddSched()" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:13px;color:#9b9794;display:flex;align-items:center;justify-content:center;margin-left:auto;line-height:1">+</button>
         </div>
         ${rSched(sched)}
-      </div>`:''}
+      </div>
     </div>
   </div>`;
 }
@@ -808,8 +852,7 @@ async function testToken(){
     if(!r.ok)throw new Error(data.message||`${r.status}`);
     S.token=token;localStorage.setItem(TOKEN_KEY,token);S.testing=false;render();
     loadTasksByDate(S.selectedDate,S.user);
-    const widx=dateToWeekday(S.selectedDate);
-    if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+    setTimeout(()=>loadSched(S.user),400);
   }catch(e){S.testing=false;toast('연결 실패: '+e.message,true);render();}
 }
 
@@ -824,7 +867,9 @@ function render(){
   const widx=dateToWeekday(S.selectedDate);
   const isWeekend=widx===null;
   const tasks=S.tasks[`${S.selectedDate}-${S.user}`]||[];
-  const sched=widx!==null?(S.sched[`${widx}-${S.user}`]||[]):[];
+  const allSched=S.sched[S.user]||[];
+  const curWeekday=widx!==null?WEEKDAY_KR[widx]:null;
+  const sched=curWeekday?allSched.filter(s=>s.weekday===curWeekday):[];
   const inc=tasks.filter(t=>!t.completed),dn=tasks.filter(t=>t.completed);
   const uc=UC[S.user]||TEAM_COLOR[S.team]||'#e05c1a';
   const dc=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
@@ -861,21 +906,18 @@ function selTeam(t){
   S.tasks={};S.sched={};
   render();
   loadTasksByDate(S.selectedDate,S.user);
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>loadSched(S.user),400);
 }
 function selUser(u){
   S.user=u;S.tasks={};render();
   loadTasksByDate(S.selectedDate,u);
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx!==null)setTimeout(()=>loadSched(widx,u),400);
+  setTimeout(()=>loadSched(u),400);
 }
 function selectDate(ds){
   S.selectedDate=ds;
   render();
   loadTasksByDate(ds,S.user);
-  const widx=dateToWeekday(ds);
-  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>loadSched(S.user),400);
   setTimeout(()=>{const e=document.getElementById('ti');if(e)e.focus();},60);
 }
 function moveMonth(dir){
@@ -889,8 +931,7 @@ function goToday(){
   S.calYear=n.getUTCFullYear();S.calMonth=n.getUTCMonth();
   S.selectedDate=todayStr();render();
   loadTasksByDate(S.selectedDate,S.user);
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>loadSched(S.user),400);
 }
 function addTask(){
   const e=document.getElementById('ti'),t=(e?.value||'').trim();
@@ -907,8 +948,7 @@ function clearDone(){
 function refresh(){
   S.tasks={};S.sched={};render();
   loadTasksByDate(S.selectedDate,S.user);
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>loadSched(S.user),400);
 }
 function resetToken(){
   if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;
@@ -921,8 +961,7 @@ function resetToken(){
 render();
 if(S.token){
   loadTasksByDate(S.selectedDate,S.user);
-  const widx=dateToWeekday(S.selectedDate);
-  if(widx!==null)setTimeout(()=>loadSched(widx,S.user),400);
+  setTimeout(()=>loadSched(S.user),400);
 }
 </script>
 </body>
