@@ -118,6 +118,7 @@ let S = {
   tL: false, sL: false,
   toast: null, testing: false,
   editingSched: null,
+  addingSched: null,
 };
 
 /* ══════════════════════════════════════
@@ -288,6 +289,38 @@ function saveEditSched(){
   doUpdateSched(e.id,{label:e.label,slot:e.slot,type:e.type,duration:e.duration,desc:e.desc});
 }
 function setEditSchedField(field,val){if(S.editingSched)S.editingSched[field]=val;}
+function startAddSched(){
+  S.addingSched={label:'',slot:'오전',type:'유동',duration:'',desc:''};
+  S.editingSched=null;
+  render();
+}
+function cancelAddSched(){S.addingSched=null;render();}
+function setAddSchedField(field,val){if(S.addingSched)S.addingSched[field]=val;}
+async function saveAddSched(){
+  if(!S.addingSched||!S.addingSched.label.trim()){toast('업무명을 입력해주세요',true);return;}
+  const a=S.addingSched;
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx===null)return;
+  const weekday=WEEKDAY_KR[widx];
+  S.addingSched=null;render();
+  try{
+    const props={
+      '업무명':{title:[{text:{content:a.label.trim()}}]},
+      '요일':{select:{name:weekday}},
+      '담당자':{select:{name:S.user}},
+      '활성':{checkbox:true},
+      '시간대':{select:{name:a.slot}},
+      '업무타입':{select:{name:a.type}},
+    };
+    if(a.duration.trim())props['소요시간']={rich_text:[{text:{content:a.duration.trim()}}]};
+    if(a.desc.trim())props['설명']={rich_text:[{text:{content:a.desc.trim()}}]};
+    await notion('POST','/pages',{parent:{database_id:SCHED_DB},properties:props});
+    delete S.sched[`${widx}-${S.user}`];
+    await loadSched(widx,S.user);
+    toast('고정업무 추가됨');
+  }catch(e){toast('추가 실패: '+e.message,true);}
+  render();
+}
 function setBrand(v){S.addBrand=v;}
 function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
 
@@ -438,9 +471,56 @@ function rTaskList(tasks,ac,dim){
 /* ══════════════════════════════════════
    고정 스케줄 & 주간 현황
 ══════════════════════════════════════ */
+function rSchedAddForm(){
+  if(!S.addingSched)return'';
+  const a=S.addingSched;
+  const typeKeys=Object.keys(TS);
+  return`<div style="background:#fff;border:2px solid #10b981;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 2px 8px rgba(16,185,129,0.12)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:10px;font-weight:700;color:#10b981;letter-spacing:.5px">새 고정업무</span>
+      <div style="display:flex;gap:5px">
+        <button onclick="cancelAddSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
+        <button onclick="saveAddSched()" style="background:#10b981;border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">추가</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무명</div>
+        <input value="${esc(a.label)}" oninput="setAddSchedField('label',this.value)" placeholder="업무명 입력"
+          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"
+          onkeydown="if(event.key==='Enter')saveAddSched()"/>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무타입</div>
+          <select onchange="setAddSchedField('type',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
+            ${typeKeys.map(k=>`<option value="${esc(k)}" ${a.type===k?'selected':''}>${esc(k)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
+          <select onchange="setAddSchedField('slot',this.value)" style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;cursor:pointer">
+            ${SLOT_ORDER.map(sl=>`<option value="${esc(sl)}" ${a.slot===sl?'selected':''}>${esc(SL[sl]||sl)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">소요시간</div>
+        <input value="${esc(a.duration)}" oninput="setAddSchedField('duration',this.value)" placeholder="예: 30분, 1시간"
+          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
+      </div>
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명</div>
+        <textarea oninput="setAddSchedField('desc',this.value)" placeholder="설명 (선택)"
+          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none;resize:vertical;min-height:40px;font-family:inherit">${esc(a.desc)}</textarea>
+      </div>
+    </div>
+  </div>`;
+}
 function rSched(sched){
-  if(S.sL&&!sched.length)return`<div class="sk" style="height:70px;margin-bottom:8px"></div><div class="sk" style="height:70px;opacity:.6"></div>`;
-  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:14px;text-align:center;color:#9b9794;font-size:12px">고정 스케줄 없음</div>`;
+  const addForm=rSchedAddForm();
+  if(S.sL&&!sched.length)return`<div class="sk" style="height:70px;margin-bottom:8px"></div><div class="sk" style="height:70px;opacity:.6"></div>${addForm}`;
+  if(!sched.length)return`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:14px;text-align:center;color:#9b9794;font-size:12px">고정 스케줄 없음</div>${addForm}`;
   const typeKeys=Object.keys(TS);
   return sched.map(s=>{
     const isEditing=S.editingSched&&S.editingSched.id===s.id;
@@ -498,7 +578,7 @@ function rSched(sched){
       <div style="font-size:12px;font-weight:700;color:#1c1a17;margin-bottom:3px">${esc(s.label)}</div>
       ${s.desc?`<p style="margin:0;font-size:10px;color:#6b6762;line-height:1.5">${esc(s.desc)}</p>`:''}
     </div>`;
-  }).join('');
+  }).join('')+addForm;
 }
 
 function rWeekProg(){
@@ -568,6 +648,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
         <span style="width:3px;height:14px;border-radius:2px;background:${ac};display:inline-block"></span>
         <span style="font-size:12px;font-weight:700;color:#1c1a17">고정 업무</span>
+        <button onclick="startAddSched()" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:13px;color:#9b9794;display:flex;align-items:center;justify-content:center;margin-left:auto;line-height:1">+</button>
       </div>
       ${rSched(sched)}
     </div>`:''}
@@ -653,6 +734,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="width:3px;height:16px;border-radius:2px;display:inline-block;background:${ac}"></span>
           <span style="font-size:12px;font-weight:700;color:#1c1a17">고정 업무</span>
+          <button onclick="startAddSched()" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:13px;color:#9b9794;display:flex;align-items:center;justify-content:center;margin-left:auto;line-height:1">+</button>
         </div>
         ${rSched(sched)}
       </div>`:''}
