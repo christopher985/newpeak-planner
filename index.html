@@ -209,6 +209,23 @@ async function loadTasksByDate(ds,user){
   }catch(e){S.tasks[k]=[];toast('태스크 로드 실패: '+e.message,true);}
   S.tL=false;render();
 }
+async function loadCarried(user){
+  const k='carried-'+user;
+  if(S.tasks[k]!==undefined)return;
+  try{
+    const today=todayStr();
+    const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
+      filter:{and:[
+        {property:'완료',checkbox:{equals:false}},
+        {property:'날짜',date:{before:today}},
+        {property:'담당자',select:{equals:user}},
+      ]},
+      sorts:[{property:'날짜',direction:'ascending'}],
+    });
+    S.tasks[k]=res.results.map(p=>{const t=mapTask(p);t.carried=true;return t;});
+  }catch(e){S.tasks[k]=[];}
+  render();
+}
 function mapTask(p){
   return{
     id:p.id,
@@ -289,12 +306,56 @@ async function updateDesignStatus(id,status){
   try{await notion('PATCH',`/pages/${id}`,{properties:{'상태':{status:{name:status}}}});}
   catch(e){r.status=prev;toast('상태 변경 실패',true);render();}
 }
-function openDesignDetail(id){
+async function openDesignDetail(id){
   const r=S.designReqs?.find(x=>x.id===id);
   if(!r)return;
-  S.designDetail={...r};render();
+  S.designDetail={...r,content:null,contentLoading:true};render();
+  try{
+    const res=await notion('GET',`/blocks/${id}/children?page_size=100`);
+    const blocks=res.results||[];
+    await loadBlockChildren(id,blocks);
+    S.designDetail.content=blocks;
+  }catch(e){S.designDetail.content=[];}
+  S.designDetail.contentLoading=false;render();
 }
 function closeDesignDetail(){S.designDetail=null;render();}
+function renderBlock(b){
+  const t=b.type;
+  if(t==='heading_2'){const rt=b.heading_2.rich_text.map(r=>renderRichText(r)).join('');return`<div style="font-size:13px;font-weight:800;color:#1c1a17;margin:12px 0 6px;padding:4px 0;border-bottom:1px solid #f0eee9">${rt}</div>`;}
+  if(t==='heading_3'){const rt=b.heading_3.rich_text.map(r=>renderRichText(r)).join('');return`<div style="font-size:12px;font-weight:700;color:#1c1a17;margin:8px 0 4px">${rt}</div>`;}
+  if(t==='paragraph'){const rt=b.paragraph.rich_text.map(r=>renderRichText(r)).join('');if(!rt.trim())return'';return`<div style="font-size:12px;color:#1c1a17;line-height:1.6;margin:2px 0">${rt}</div>`;}
+  if(t==='bulleted_list_item'){const rt=b.bulleted_list_item.rich_text.map(r=>renderRichText(r)).join('');if(!rt.trim())return'';return`<div style="font-size:12px;color:#1c1a17;line-height:1.6;margin:1px 0;padding-left:12px">• ${rt}</div>`;}
+  if(t==='numbered_list_item'){const rt=b.numbered_list_item.rich_text.map(r=>renderRichText(r)).join('');if(!rt.trim())return'';return`<div style="font-size:12px;color:#1c1a17;line-height:1.6;margin:1px 0;padding-left:12px">${rt}</div>`;}
+  if(t==='table'){return`<div style="overflow-x:auto;margin:6px 0"><table style="width:100%;border-collapse:collapse;font-size:11px">${(b._children||[]).map(row=>{
+    if(row.type!=='table_row')return'';
+    return`<tr>${row.table_row.cells.map(cell=>`<td style="border:1px solid #e8e4de;padding:4px 6px;color:#1c1a17">${cell.map(r=>renderRichText(r)).join('')}</td>`).join('')}</tr>`;
+  }).join('')}</table></div>`;}
+  if(t==='toggle'){const rt=b.toggle.rich_text.map(r=>renderRichText(r)).join('');return`<details style="margin:4px 0;font-size:12px"><summary style="font-weight:700;color:#2563eb;cursor:pointer">${rt}</summary></details>`;}
+  if(t==='divider')return`<hr style="border:none;border-top:1px solid #e8e4de;margin:8px 0"/>`;
+  if(t==='image'){const url=b.image?.file?.url||b.image?.external?.url||'';return url?`<img src="${esc(url)}" style="max-width:100%;border-radius:6px;margin:6px 0"/>`:'';}
+  return'';
+}
+function renderRichText(r){
+  let t=esc(r.plain_text||'');
+  if(r.annotations?.bold)t=`<b>${t}</b>`;
+  if(r.annotations?.italic)t=`<i>${t}</i>`;
+  if(r.annotations?.strikethrough)t=`<s>${t}</s>`;
+  if(r.annotations?.color&&r.annotations.color!=='default'){
+    const c=r.annotations.color;
+    if(c.endsWith('_background')||c.endsWith('_bg'))t=`<span style="background:#fef9c3;padding:0 2px;border-radius:2px">${t}</span>`;
+    else{const cm={'red':'#dc2626','blue':'#2563eb','green':'#16a34a','yellow':'#ca8a04','purple':'#7c3aed','pink':'#db2777','orange':'#ea580c','gray':'#6b7280'};
+      t=`<span style="color:${cm[c]||c}">${t}</span>`;}
+  }
+  return t;
+}
+async function loadBlockChildren(parentId,blocks){
+  // 테이블의 자식 행 로드
+  for(const b of blocks){
+    if(b.type==='table'&&b.has_children){
+      try{const res=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=res.results||[];}catch(e){b._children=[];}
+    }
+  }
+}
 
 /* ══════════════════════════════════════
    CRUD
@@ -546,6 +607,70 @@ function dDropZone(e,zone){
   else if(zone==='inc'&&wasInDrop){S.dropZone[k]=dz.filter(x=>x!==_dragId);}
   _dragId=null;render();
 }
+/* 터치 드래그 (모바일) */
+let _tTimer=null,_tId=null,_tClone=null,_tActive=false,_tMoved=false;
+function tStart(e,id){
+  _tMoved=false;
+  _tTimer=setTimeout(()=>{
+    _tId=id;_tActive=true;_tMoved=true;
+    const el=e.target.closest('.row');
+    if(!el)return;
+    // 고스트 클론 생성
+    _tClone=el.cloneNode(true);
+    const r=el.getBoundingClientRect();
+    _tClone.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;opacity:.8;z-index:2000;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.18);border:2px solid #e05c1a;border-radius:10px;transition:none`;
+    document.body.appendChild(_tClone);
+    el.style.opacity='.3';
+    // 진동 피드백
+    if(navigator.vibrate)navigator.vibrate(30);
+  },400);
+  document.addEventListener('touchmove',tMove,{passive:false});
+  document.addEventListener('touchend',tCancel,{once:true});
+}
+function tMove(e){
+  if(!_tActive){
+    // 길게 누르기 전에 움직이면 취소 (스크롤 허용)
+    if(!_tMoved){clearTimeout(_tTimer);document.removeEventListener('touchmove',tMove);}
+    return;
+  }
+  e.preventDefault();
+  const touch=e.touches[0];
+  if(_tClone){_tClone.style.left=(touch.clientX-_tClone.offsetWidth/2)+'px';_tClone.style.top=(touch.clientY-40)+'px';}
+  // 드래그 오버 하이라이트
+  document.querySelectorAll('.row.drag-over').forEach(r=>r.classList.remove('drag-over'));
+  const el=document.elementFromPoint(touch.clientX,touch.clientY);
+  if(el){const row=el.closest('.row');if(row&&row!==_tClone)row.classList.add('drag-over');}
+}
+function tEnd(e,cardId,zone){
+  document.removeEventListener('touchmove',tMove);
+  clearTimeout(_tTimer);
+  if(!_tActive){_tId=null;return;}
+  // 드롭 대상 찾기
+  if(_tClone){_tClone.remove();_tClone=null;}
+  document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
+  const touch=e.changedTouches[0];
+  const el=document.elementFromPoint(touch.clientX,touch.clientY);
+  if(el&&_tId){
+    const dropRow=el.closest('.row');
+    const dropZoneEl=el.closest('[data-dropzone]');
+    if(dropRow){
+      const tid=dropRow.getAttribute('data-tid');
+      const tz=dropRow.getAttribute('data-tz')||'inc';
+      if(tid&&tid!==_tId){_dragId=_tId;dDropCard({preventDefault(){},stopPropagation(){}},tid,tz);}
+    } else if(dropZoneEl){
+      const zn=dropZoneEl.getAttribute('data-dropzone');
+      if(zn){_dragId=_tId;dDropZone({preventDefault(){}},zn);}
+    }
+  }
+  _tId=null;_tActive=false;
+}
+function tCancel(){
+  document.removeEventListener('touchmove',tMove);
+  clearTimeout(_tTimer);
+  if(_tClone){_tClone.remove();_tClone=null;}
+  document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
+  _tId=null;_tActive=false;
+}
 function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
 
 /* ══════════════════════════════════════
@@ -672,8 +797,8 @@ function tRow(t,ac,dim){
   </div>`:'';
 
   const dzone=t._dzone||'inc';
-  const dragAttr=isPerfTeam&&!dim&&!t._p?`draggable="true" ondragstart="dStart(event,'${t.id}')" ondragend="dEnd(event)" ondragover="dOver(event)" ondrop="dDropCard(event,'${t.id}','${dzone}')"`:''
-  return`<div class="row" ${dragAttr} style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
+  const dragAttr=isPerfTeam&&!dim&&!t._p?`draggable="true" ondragstart="dStart(event,'${t.id}')" ondragend="dEnd(event)" ondragover="dOver(event)" ondrop="dDropCard(event,'${t.id}','${dzone}')" ontouchstart="tStart(event,'${t.id}')" ontouchend="tEnd(event,'${t.id}','${dzone}')"`:''
+  return`<div class="row" ${dragAttr} data-tid="${t.id}" data-tz="${dzone}" style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
     box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}${isPerfTeam&&!dim?';cursor:grab':''}">
     <button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
@@ -686,7 +811,7 @@ function tRow(t,ac,dim){
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${t.priority&&!dim?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:''}
         ${us&&!dim?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:''}
-        ${t.carried&&!dim?`<span style="font-size:9px;background:#f5f3ef;color:#9b9794;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #e8e4de">이관</span>`:''}
+        ${t.carried&&!dim?`<span style="font-size:9px;background:#fef2f2;color:#b91c1c;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #fecaca">이월${t.dateStr?'·'+t.dateStr.slice(5).replace('-','/'):''}</span>`:''}
         <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
         ${t.memo?`<span style="font-size:9px;color:#9b9794;margin-left:2px">📝</span>`:''}
       </div>
@@ -899,7 +1024,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
             background:${S.incSort===b.k?ac:'#f5f3ef'};border:1px solid ${S.incSort===b.k?ac:'#e8e4de'};color:${S.incSort===b.k?'#fff':'#9b9794'}">${b.l}</button>`).join('')}
         </div>`:''}
       </div>
-      <div ondragover="dOver(event)" ondrop="dDropZone(event,'inc')" style="min-height:40px">
+      <div ondragover="dOver(event)" ondrop="dDropZone(event,'inc')" data-dropzone="inc" style="min-height:40px">
         ${S.tL&&!tasks.length?skeletons:rTaskList(sortedInc,ac,false)}
       </div>
       <!-- Drop 섹션 -->
@@ -909,7 +1034,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
           <span style="font-size:12px;font-weight:800;color:#1c1a17">Drop</span>
           ${dropItems.length?`<span style="font-size:10px;background:#f59e0b18;color:#f59e0b;border-radius:8px;padding:2px 7px;font-weight:700">${dropItems.length}</span>`:''}
         </div>
-        <div ondragover="dOver(event)" ondrop="dDropZone(event,'drop')" style="min-height:50px;background:#fefce8;border:1.5px dashed #fde68a;border-radius:10px;padding:8px;transition:background .15s">
+        <div ondragover="dOver(event)" ondrop="dDropZone(event,'drop')" data-dropzone="drop" style="min-height:50px;background:#fefce8;border:1.5px dashed #fde68a;border-radius:10px;padding:8px;transition:background .15s">
           ${dropItems.length?dropItems.map(t=>tRow(t,ac,false)).join(''):`<div style="text-align:center;padding:14px 0">
             <div style="font-size:11px;color:#ca8a04">미완료 카드를 여기로 드래그</div>
           </div>`}
@@ -1093,9 +1218,15 @@ function rDesignDetailModal(){
   const sc=D_STATUS_COLOR[d.status];
   const pc=D_PRIORITY_COLOR[d.priority]||'#9b9794';
   const bc=d.brand?D_BRAND_COLOR[d.brand]||'#9b9794':null;
+  const contentHtml=d.contentLoading
+    ?`<div style="display:flex;align-items:center;justify-content:center;padding:20px;gap:8px"><div class="sp"></div><span style="font-size:11px;color:#9b9794">본문 불러오는 중…</span></div>`
+    :d.content&&d.content.length
+      ?d.content.map(b=>renderBlock(b)).join('')
+      :`<div style="text-align:center;padding:16px;color:#9b9794;font-size:12px">본문 내용 없음</div>`;
+
   return`<div onclick="if(event.target===this)closeDesignDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
-    <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
-      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;flex-shrink:0">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
           <div style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(d.title)}</div>
@@ -1103,29 +1234,21 @@ function rDesignDetailModal(){
               <span style="font-size:9px;background:${sc}18;color:${sc};border:1px solid ${sc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.status}</span>
               <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.priority}</span>
               ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:2px 7px;font-weight:700">${esc(d.brand)}</span>`:''}
+              ${d.deadline?`<span style="font-size:9px;background:#f5f3ef;color:#6b6762;border:1px solid #e8e4de;border-radius:4px;padding:2px 7px;font-weight:700">${d.deadline}</span>`:''}
             </div>
           </div>
           <button onclick="closeDesignDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
         </div>
       </div>
-      <div style="padding:14px 18px">
-        <div style="display:flex;flex-direction:column;gap:10px">
-          ${d.deadline?`<div style="display:flex;align-items:center;gap:6px">
-            <span style="font-size:10px;font-weight:700;color:#9b9794;width:60px">데드라인</span>
-            <span style="font-size:12px;color:#1c1a17;font-weight:600">${d.deadline}</span>
-          </div>`:''}
-          ${d.edited?`<div style="display:flex;align-items:center;gap:6px">
-            <span style="font-size:10px;font-weight:700;color:#9b9794;width:60px">최종수정</span>
-            <span style="font-size:12px;color:#1c1a17">${new Date(d.edited).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-          </div>`:''}
-          <div style="margin-top:6px">
-            <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px">상태 변경</div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              ${D_STATUS.map(s=>{const c=D_STATUS_COLOR[s];const sel=d.status===s;return`<button onclick="updateDesignStatus('${d.id}','${s}');closeDesignDetail()"
-                style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;
-                background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${s}</button>`;}).join('')}
-            </div>
-          </div>
+      <div style="flex:1;overflow-y:auto;padding:12px 18px">
+        ${contentHtml}
+      </div>
+      <div style="padding:10px 18px 14px;border-top:1px solid #e8e4de;flex-shrink:0">
+        <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px">상태 변경</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${D_STATUS.map(s=>{const c=D_STATUS_COLOR[s];const sel=d.status===s;return`<button onclick="updateDesignStatus('${d.id}','${s}');closeDesignDetail()"
+            style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;
+            background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${s}</button>`;}).join('')}
         </div>
       </div>
     </div>
@@ -1199,7 +1322,15 @@ function render(){
   const allSched=S.sched[S.user]||[];
   const curWeekday=widx!==null?WEEKDAY_KR[widx]:null;
   const sched=curWeekday?allSched.filter(s=>s.weekday===curWeekday):[];
-  const inc=tasks.filter(t=>!t.completed),dn=tasks.filter(t=>t.completed);
+  let inc=tasks.filter(t=>!t.completed);
+  const dn=tasks.filter(t=>t.completed);
+  // 오늘 이후 날짜: 과거 미완료 이월
+  if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
+    const carried=S.tasks['carried-'+S.user]||[];
+    const todayIds=new Set(tasks.map(t=>t.id));
+    const carryItems=carried.filter(t=>!todayIds.has(t.id));
+    if(carryItems.length)inc=[...carryItems,...inc];
+  }
   const uc=UC[S.user]||TEAM_COLOR[S.team]||'#e05c1a';
   const dc=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
   const ac=widx!==null?dc[widx]:'#9b9794';
@@ -1240,12 +1371,13 @@ function selTeam(t){
   S.tasks={};S.sched={};S.designReqs=null;S.designAdd=null;S.designDetail=null;
   render();
   if(t==='디자인'){loadDesignReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스')loadCarried(S.user);}
 }
 function selUser(u){
   S.user=u;S.tasks={};render();
   loadTasksByDate(S.selectedDate,u);
   setTimeout(()=>loadSched(u),400);
+  if(S.team==='퍼포먼스')loadCarried(u);
 }
 function selectDate(ds){
   S.selectedDate=ds;
@@ -1283,6 +1415,7 @@ function refresh(){
   S.tasks={};S.sched={};render();
   loadTasksByDate(S.selectedDate,S.user);
   setTimeout(()=>loadSched(S.user),400);
+  if(S.team==='퍼포먼스')loadCarried(S.user);
 }
 function resetToken(){
   if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;
@@ -1295,7 +1428,7 @@ function resetToken(){
 render();
 if(S.token){
   if(S.team==='디자인'){loadDesignReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);}
 }
 </script>
 </body>
