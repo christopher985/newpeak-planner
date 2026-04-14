@@ -298,6 +298,63 @@ async function saveEditTask(){
     toast('수정됨');
   }catch(err){Object.assign(t,prev);toast('수정 실패: '+err.message,true);render();}
 }
+function openMemo(id){
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===id);
+  if(!t||t._p)return;
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand,area:t.area,completed:t.completed,dirty:false};
+  render();
+  setTimeout(()=>{const el=document.getElementById('memo-ta');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},60);
+}
+function closeMemo(){
+  if(S.memoModal&&S.memoModal.dirty)saveMemo();
+  else{S.memoModal=null;render();}
+}
+function setMemoText(val){if(S.memoModal){S.memoModal.memo=val;S.memoModal.dirty=true;}}
+async function saveMemo(){
+  if(!S.memoModal)return;
+  const m=S.memoModal;
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===m.id);
+  if(!t){S.memoModal=null;render();return;}
+  const prev=t.memo;
+  t.memo=m.memo;
+  S.memoModal=null;render();
+  try{
+    await notion('PATCH',`/pages/${m.id}`,{properties:{'메모':{rich_text:[{text:{content:m.memo}}]}}});
+  }catch(e){t.memo=prev;toast('메모 저장 실패: '+e.message,true);render();}
+}
+function rMemoModal(){
+  if(!S.memoModal)return'';
+  const m=S.memoModal;
+  const bc=m.brand?BRAND_COLOR[m.brand]||'#9b9794':null;
+  const ac2=m.area?AREA_COLOR[m.area]||'#9b9794':null;
+  return`<div onclick="if(event.target===this)closeMemo()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(m.text)}</div>
+            <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
+              ${m.completed?`<span style="font-size:9px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:4px;padding:1px 6px;font-weight:700">완료</span>`:''}
+              ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(m.brand)}</span>`:''}
+              ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(m.area)}</span>`:''}
+            </div>
+          </div>
+          <button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
+        </div>
+      </div>
+      <div style="padding:14px 18px;flex:1;overflow-y:auto">
+        <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">메모</div>
+        <textarea id="memo-ta" oninput="setMemoText(this.value)" placeholder="메모를 입력하세요…"
+          style="width:100%;min-height:180px;background:#f9f8f6;border:1.5px solid #e8e4de;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;transition:border-color .15s"
+          onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e8e4de'">${esc(m.memo)}</textarea>
+      </div>
+      <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:flex-end;gap:8px">
+        <button onclick="S.memoModal.dirty=false;S.memoModal=null;render()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
+        <button onclick="saveMemo()" style="background:#3b82f6;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+      </div>
+    </div>
+  </div>`;
+}
 async function doUpdateSched(id,updates){
   const k=S.user;
   const arr=S.sched[k]||[];
