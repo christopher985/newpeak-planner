@@ -269,12 +269,15 @@ async function addDesignReq(){
   try{
     const props={
       '제목':{title:[{text:{content:a.title.trim()}}]},
-      '상태':{status:{name:'요청'}},
-      '중요도':{status:{name:a.priority}},
     };
     if(a.brand)props['브랜드']={select:{name:a.brand}};
     if(a.deadline)props['Dead Line']={date:{start:a.deadline}};
-    await notion('POST','/pages',{parent:{database_id:DESIGN_DB},properties:props});
+    const res=await notion('POST','/pages',{parent:{database_id:DESIGN_DB},properties:props});
+    // status 타입은 생성 후 PATCH로 설정
+    const patches={};
+    if(a.priority&&a.priority!=='보통')patches['중요도']={status:{name:a.priority}};
+    patches['상태']={status:{name:'요청'}};
+    await notion('PATCH',`/pages/${res.id}`,{properties:patches});
     S.designReqs=null;await loadDesignReqs();
     toast('디자인 요청 등록됨');
   }catch(e){toast('등록 실패: '+e.message,true);}
