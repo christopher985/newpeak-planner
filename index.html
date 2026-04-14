@@ -328,50 +328,43 @@ function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;rend
    캘린더
 ══════════════════════════════════════ */
 function rCalendar(){
-  const months=[-1,0,1].map(offset=>{
-    let y=S.calYear,m=S.calMonth+offset;
-    if(m<0){m+=12;y--;}if(m>11){m-=12;y++;}
-    return{year:y,month:m};
-  });
+  const year=S.calYear,month=S.calMonth;
   const today=todayStr();
-  const monthHtml=months.map(({year,month})=>{
-    const mName=`${year}. ${String(month+1).padStart(2,'0')}.`;
-    const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay();
-    const lastDate=new Date(Date.UTC(year,month+1,0)).getUTCDate();
-    const prevLastDate=new Date(Date.UTC(year,month,0)).getUTCDate();
-    let cells=[];
-    for(let i=firstDay-1;i>=0;i--){const d=prevLastDate-i,pm=month-1<0?11:month-1,py=month-1<0?year-1:year;cells.push({d,ds:`${py}-${String(pm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
-    for(let d=1;d<=lastDate;d++)cells.push({d,ds:`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:false});
-    const rem=42-cells.length;
-    for(let d=1;d<=rem;d++){const nm=month+1>11?0:month+1,ny=month+1>11?year+1:year;cells.push({d,ds:`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
-    const cellHtml=cells.map(({d,ds,otherMonth})=>{
-      const isToday=ds===today,isSel=ds===S.selectedDate;
-      const dow=new Date(ds+'T00:00:00Z').getUTCDay();
-      const isSun=dow===0,isSat=dow===6;
-      const k=`${ds}-${S.user}`,dt=S.tasks[k]||[];
-      const hasTodo=dt.filter(t=>!t.completed).length>0,hasDone=dt.filter(t=>t.completed).length>0;
-      let cls='cal-cell'+(otherMonth?' other-month':'')+(isToday?' today':'')+(isSel?' selected':'')+(isSun?' sun':'')+(isSat?' sat':'');
-      let ns=`font-size:12px;font-weight:${isToday||isSel?700:400};`;
-      if(isToday||isSel)ns=`width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;background:${isToday?'#e05c1a':'#1c1a17'};color:#fff!important;`;
-      else if(!otherMonth)ns+=`color:${isSun?'#ef4444':isSat?'#3b82f6':'#1c1a17'};`;
-      return`<div class="${cls}" onclick="selectDate('${ds}')" style="padding:4px 0">
-        <span style="${ns}">${d}</span>
-        <div class="cal-dots">${hasTodo?'<div class="cal-dot" style="background:#e05c1a"></div>':''}${hasDone?'<div class="cal-dot" style="background:#22c55e"></div>':''}</div>
-      </div>`;
-    }).join('');
-    return`<div style="flex:1;min-width:0">
-      <div style="text-align:center;font-size:13px;font-weight:700;color:#1c1a17;margin-bottom:10px">${mName}</div>
-      <div class="cal-grid">${DAY_NAMES.map(n=>`<div class="cal-day-hdr${n==='일'?' sun':n==='토'?' sat':''}">${n}</div>`).join('')}${cellHtml}</div>
+  const mName=`${year}. ${String(month+1).padStart(2,'0')}.`;
+  const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay();
+  const lastDate=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+  const prevLastDate=new Date(Date.UTC(year,month,0)).getUTCDate();
+  let cells=[];
+  for(let i=firstDay-1;i>=0;i--){const d=prevLastDate-i,pm=month-1<0?11:month-1,py=month-1<0?year-1:year;cells.push({d,ds:`${py}-${String(pm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
+  for(let d=1;d<=lastDate;d++)cells.push({d,ds:`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:false});
+  const rem=(Math.ceil(cells.length/7)*7)-cells.length;
+  for(let d=1;d<=rem;d++){const nm=month+1>11?0:month+1,ny=month+1>11?year+1:year;cells.push({d,ds:`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
+  const cellHtml=cells.map(({d,ds,otherMonth})=>{
+    const isToday=ds===today,isSel=ds===S.selectedDate;
+    const dow=new Date(ds+'T00:00:00Z').getUTCDay();
+    const isSun=dow===0,isSat=dow===6;
+    const k=`${ds}-${S.user}`,dt=S.tasks[k]||[];
+    const hasTodo=dt.filter(t=>!t.completed).length>0,hasDone=dt.filter(t=>t.completed).length>0;
+    let cls='cal-cell'+(otherMonth?' other-month':'')+(isToday?' today':'')+(isSel?' selected':'')+(isSun?' sun':'')+(isSat?' sat':'');
+    let ns=`font-size:12px;font-weight:${isToday||isSel?700:400};`;
+    if(isToday||isSel)ns=`width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;background:${isToday?'#e05c1a':'#1c1a17'};color:#fff!important;`;
+    else if(!otherMonth)ns+=`color:${isSun?'#ef4444':isSat?'#3b82f6':'#1c1a17'};`;
+    return`<div class="${cls}" onclick="selectDate('${ds}')" style="padding:4px 0">
+      <span style="${ns}">${d}</span>
+      <div class="cal-dots">${hasTodo?'<div class="cal-dot" style="background:#e05c1a"></div>':''}${hasDone?'<div class="cal-dot" style="background:#22c55e"></div>':''}</div>
     </div>`;
-  }).join('<div style="width:1px;background:#e8e4de;flex-shrink:0"></div>');
+  }).join('');
   return`<div style="background:#fff;border-bottom:1px solid #e8e4de;padding:16px 24px">
-    <div style="max-width:1160px;margin:0 auto">
+    <div style="max-width:560px;margin:0 auto">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <button onclick="moveMonth(-1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">‹</button>
-        <button onclick="goToday()" style="background:none;border:none;cursor:pointer;font-size:11px;font-weight:700;color:#e05c1a;letter-spacing:.3px">오늘</button>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:14px;font-weight:700;color:#1c1a17">${mName}</span>
+          <button onclick="goToday()" style="background:none;border:none;cursor:pointer;font-size:11px;font-weight:700;color:#e05c1a;letter-spacing:.3px">오늘</button>
+        </div>
         <button onclick="moveMonth(1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">›</button>
       </div>
-      <div style="display:flex;gap:16px">${monthHtml}</div>
+      <div class="cal-grid">${DAY_NAMES.map(n=>`<div class="cal-day-hdr${n==='일'?' sun':n==='토'?' sat':''}">${n}</div>`).join('')}${cellHtml}</div>
     </div>
   </div>`;
 }
