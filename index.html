@@ -85,6 +85,11 @@ const BRAND_COLOR = {
   '진수성찬':'#e05c1a','얼김치':'#3b82f6','한국고려삼':'#10b981',
   '올라잇클래스':'#8b5cf6','히든':'#6b7280','기타':'#9b9794'
 };
+const AREAS = ['자사몰','스마트스토어','CRM','메타광고','GFA/검색광고','브랜드커넥트','유튜브','인스타그램'];
+const AREA_COLOR = {
+  '자사몰':'#e05c1a','스마트스토어':'#10b981','CRM':'#ef4444','메타광고':'#3b82f6',
+  'GFA/검색광고':'#f59e0b','브랜드커넥트':'#8b5cf6','유튜브':'#dc2626','인스타그램':'#ec4899'
+};
 const UC = {
   '크리스토퍼':'#e05c1a','켈리':'#ec4899','에디':'#3b82f6',
   '마틴':'#10b981',
@@ -129,6 +134,7 @@ let S = {
   team: _savedTeam,
   user: (TEAM_MEMBERS[_savedTeam]||['크리스토퍼'])[0],
   addBrand: '기타',
+  addArea: null,
   calYear: getKSTNow().getUTCFullYear(),
   calMonth: getKSTNow().getUTCMonth(),
   selectedDate: todayStr(),
@@ -204,6 +210,7 @@ function mapTask(p){
     carried:p.properties['이관']?.checkbox||false,
     dateStr:p.properties['날짜']?.date?.start||null,
     brand:p.properties['브랜드']?.select?.name||null,
+    area:p.properties['영역']?.select?.name||null,
   };
 }
 async function loadSched(widx,user){
@@ -232,7 +239,7 @@ async function loadSched(widx,user){
 async function doAdd(text){
   const k=`${S.selectedDate}-${S.user}`,tid=`t${Date.now()}`;
   const weekday=dateToKrWeekday(S.selectedDate);
-  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,_p:true};
+  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,_p:true};
   (S.tasks[k]=S.tasks[k]||[]).push(tmp);render();
   try{
     const props={
@@ -243,9 +250,10 @@ async function doAdd(text){
     };
     if(weekday) props['요일']={select:{name:weekday}};
     if(S.team==='퍼포먼스'&&S.addBrand) props['브랜드']={select:{name:S.addBrand}};
+    if(S.team==='퍼포먼스'&&S.addArea) props['영역']={select:{name:S.addArea}};
     const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:props});
     const i=S.tasks[k].findIndex(t=>t.id===tid);
-    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null};
+    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null};
     toast('✓ 추가됨');
   }catch(e){S.tasks[k]=S.tasks[k].filter(t=>t.id!==tid);toast('추가 실패: '+e.message,true);}
   render();
@@ -269,6 +277,13 @@ async function doUpdateBrand(id,brand){
   const prev=t.brand;t.brand=brand;render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'브랜드':{select:{name:brand}}}});toast('브랜드 변경됨');}
   catch(e){t.brand=prev;toast('변경 실패: '+e.message,true);render();}
+}
+async function doUpdateArea(id,area){
+  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
+  if(!t)return;
+  const prev=t.area;t.area=area;render();
+  try{await notion('PATCH',`/pages/${id}`,{properties:{'영역':{select:{name:area}}}});toast('영역 변경됨');}
+  catch(e){t.area=prev;toast('변경 실패: '+e.message,true);render();}
 }
 async function doUpdateSched(id,updates){
   const widx=dateToWeekday(S.selectedDate);
@@ -350,6 +365,7 @@ async function saveAddSched(){
   render();
 }
 function setBrand(v){S.addBrand=v;}
+function setArea(v){S.addArea=S.addArea===v?null:v;}
 function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
 
 /* ══════════════════════════════════════
@@ -474,11 +490,16 @@ function tRow(t,ac,dim){
         ${t.carried&&!dim?`<span style="font-size:9px;background:#f5f3ef;color:#9b9794;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #e8e4de">이관</span>`:''}
         <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
       </div>
-      ${isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:6px">
+      ${isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
         <select class="brand-sel" onchange="doUpdateBrand('${t.id}',this.value)" style="font-size:10px;padding:2px 18px 2px 6px;color:#9b9794">
-          <option value="" ${!t.brand?'selected':''}>브랜드 선택</option>
+          <option value="" ${!t.brand?'selected':''}>브랜드</option>
           ${BRANDS.map(b=>`<option value="${esc(b)}" ${t.brand===b?'selected':''}>${b}</option>`).join('')}
+        </select>
+        ${t.area?`<span style="font-size:9px;background:${(AREA_COLOR[t.area]||'#9b9794')}18;color:${AREA_COLOR[t.area]||'#9b9794'};border:1px solid ${(AREA_COLOR[t.area]||'#9b9794')}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
+        <select class="brand-sel" onchange="doUpdateArea('${t.id}',this.value)" style="font-size:10px;padding:2px 18px 2px 6px;color:#9b9794">
+          <option value="" ${!t.area?'selected':''}>영역</option>
+          ${AREAS.map(a=>`<option value="${esc(a)}" ${t.area===a?'selected':''}>${a}</option>`).join('')}
         </select>
       </div>`:''}
     </div>
@@ -659,11 +680,17 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <div style="font-size:12px;color:#9b9794">주말입니다!</div>
     </div>`:
     `<div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
-      <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:10px;letter-spacing:.5px">브랜드 선택</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">브랜드</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
         ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const a=S.addBrand===b;return`<button onclick="setBrand('${esc(b)}');render()"
-          style="font-size:11px;font-weight:700;border-radius:6px;padding:5px 10px;cursor:pointer;transition:all .12s;
+          style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
           background:${a?c:'#f5f3ef'};border:1.5px solid ${a?c:'#e8e4de'};color:${a?'#fff':c}">${esc(b)}</button>`;}).join('')}
+      </div>
+      <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">영역</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
+        ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=S.addArea===a;return`<button onclick="setArea('${esc(a)}');render()"
+          style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
+          background:${sel?c:'#f5f3ef'};border:1.5px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
       </div>
       <div style="display:flex;gap:7px">
         <input id="ti" placeholder="업무 입력 후 Enter…"
