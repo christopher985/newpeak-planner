@@ -14,6 +14,8 @@
   @keyframes pulse{0%,100%{opacity:.4}50%{opacity:.7}}
   @keyframes spin{to{transform:rotate(360deg)}}
   .row{animation:fadeIn .15s ease}
+  .row[draggable=true]:active{cursor:grabbing}
+  .row.drag-over{border-top:2px solid #e05c1a!important}
   .sk{animation:pulse 1.4s ease infinite;background:#e8e4de;border-radius:8px}
   .sp{width:13px;height:13px;border:2px solid #d4d0ca;border-top-color:#e05c1a;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block}
   button:not([disabled]):hover{opacity:.75}
@@ -61,6 +63,7 @@
 ══════════════════════════════════════ */
 const TASKS_DB  = '0de58e7636134d4382df512e18a3ab0f';
 const SCHED_DB  = '014f0605d8fb490abfb58789e7a9c30b';
+const DESIGN_DB = '26560753b39880609313e71dd522ca3d';
 const TOKEN_KEY = 'newpick-notion-token';
 const TEAM_KEY  = 'newpick-team';
 const API_BASE  = '/.netlify/functions/proxy';
@@ -114,6 +117,11 @@ const TS = {
   '유동':{bg:'#f9f8f6',t:'#6b7280',d:'#9ca3af'},
 };
 const US = {'긴급':{bg:'#fef2f2',t:'#b91c1c'},'높음':{bg:'#fffbeb',t:'#b45309'},'보통':{bg:'#f9f8f6',t:'#6b7280'}};
+const D_BRANDS=['한국고려삼','진수성찬','동아오츠카','얼김치','플라이밀','릴릴','히든픽','정식품','건강미식','셀리맥스','VT코스메틱'];
+const D_BRAND_COLOR={'한국고려삼':'#92400e','진수성찬':'#7c3aed','동아오츠카':'#2563eb','얼김치':'#dc2626','플라이밀':'#ec4899','릴릴':'#ea580c','히든픽':'#6b7280','정식품':'#374151','건강미식':'#ca8a04','셀리맥스':'#059669','VT코스메틱':'#2563eb'};
+const D_STATUS=['요청','진행 중','수정 요청','완료'];
+const D_STATUS_COLOR={'요청':'#22c55e','진행 중':'#ec4899','수정 요청':'#f59e0b','완료':'#3b82f6'};
+const D_PRIORITY_COLOR={'긴급':'#ef4444','보통':'#f59e0b','낮음':'#22c55e'};
 
 /* ══════════════════════════════════════
    상태
@@ -141,8 +149,10 @@ let S = {
   toast: null, testing: false,
   editingSched: null,
   addingSched: null,
-  editingTask: null,
   memoModal: null,
+  incSort: 'time', manualOrder: {}, dropZone: {},
+  designReqs: null, dL: false,
+  designAdd: null, designDetail: null,
 };
 
 /* ══════════════════════════════════════
@@ -233,6 +243,57 @@ async function loadSched(user){
 }
 
 /* ══════════════════════════════════════
+   디자인 요청 로드 & CRUD
+══════════════════════════════════════ */
+async function loadDesignReqs(){
+  if(S.designReqs!==null)return;
+  S.dL=true;render();
+  try{
+    const res=await notion('POST',`/databases/${DESIGN_DB}/query`,{sorts:[{property:'최종 편집 일시',direction:'descending'}]});
+    S.designReqs=res.results.map(p=>({
+      id:p.id,
+      title:txt(p.properties['제목']),
+      brand:p.properties['브랜드']?.select?.name||null,
+      status:p.properties['상태']?.status?.name||'요청',
+      priority:p.properties['중요도']?.status?.name||'보통',
+      deadline:p.properties['Dead Line']?.date?.start||null,
+      edited:p.properties['최종 편집 일시']?.last_edited_time||null,
+    }));
+  }catch(e){S.designReqs=[];toast('디자인 요청 로드 실패: '+e.message,true);}
+  S.dL=false;render();
+}
+async function addDesignReq(){
+  const a=S.designAdd;
+  if(!a||!a.title.trim()){toast('제목을 입력해주세요',true);return;}
+  S.designAdd=null;render();
+  try{
+    const props={
+      '제목':{title:[{text:{content:a.title.trim()}}]},
+      '상태':{status:{name:'요청'}},
+      '중요도':{status:{name:a.priority}},
+    };
+    if(a.brand)props['브랜드']={select:{name:a.brand}};
+    if(a.deadline)props['Dead Line']={date:{start:a.deadline}};
+    await notion('POST','/pages',{parent:{database_id:DESIGN_DB},properties:props});
+    S.designReqs=null;await loadDesignReqs();
+    toast('디자인 요청 등록됨');
+  }catch(e){toast('등록 실패: '+e.message,true);}
+}
+async function updateDesignStatus(id,status){
+  const r=S.designReqs?.find(x=>x.id===id);
+  if(!r)return;
+  const prev=r.status;r.status=status;render();
+  try{await notion('PATCH',`/pages/${id}`,{properties:{'상태':{status:{name:status}}}});}
+  catch(e){r.status=prev;toast('상태 변경 실패',true);render();}
+}
+function openDesignDetail(id){
+  const r=S.designReqs?.find(x=>x.id===id);
+  if(!r)return;
+  S.designDetail={...r};render();
+}
+function closeDesignDetail(){S.designDetail=null;render();}
+
+/* ══════════════════════════════════════
    CRUD
 ══════════════════════════════════════ */
 async function doAdd(text){
@@ -260,71 +321,54 @@ async function doAdd(text){
 async function doToggle(id){
   const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
   if(!t)return;
-  const nv=!t.completed;t.completed=nv;render();
+  const nv=!t.completed;t.completed=nv;
+  if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
+  render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});}
   catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
   const k=`${S.selectedDate}-${S.user}`,prev=[...(S.tasks[k]||[])];
-  S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id);render();
+  S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id);
+  if(S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
+  render();
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('삭제됨');}
   catch(e){S.tasks[k]=prev;toast('삭제 실패',true);render();}
-}
-function startEditTask(id){
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===id);
-  if(!t)return;
-  S.editingTask={id,text:t.text,brand:t.brand||'',area:t.area||''};
-  render();
-}
-function cancelEditTask(){S.editingTask=null;render();}
-function setEditTaskField(field,val){if(S.editingTask)S.editingTask[field]=val;}
-function toggleEditTaskField(field,val){if(S.editingTask)S.editingTask[field]=S.editingTask[field]===val?'':val;}
-async function saveEditTask(){
-  if(!S.editingTask)return;
-  const e=S.editingTask;
-  if(!e.text.trim()){toast('업무명을 입력해주세요',true);return;}
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===e.id);
-  if(!t)return;
-  const prev={text:t.text,brand:t.brand,area:t.area};
-  t.text=e.text.trim();t.brand=e.brand||null;t.area=e.area||null;
-  S.editingTask=null;render();
-  try{
-    const props={'업무명':{title:[{text:{content:t.text}}]}};
-    if(e.brand)props['브랜드']={select:{name:e.brand}};
-    else props['브랜드']={select:null};
-    if(e.area)props['영역']={select:{name:e.area}};
-    else props['영역']={select:null};
-    await notion('PATCH',`/pages/${e.id}`,{properties:props});
-    toast('수정됨');
-  }catch(err){Object.assign(t,prev);toast('수정 실패: '+err.message,true);render();}
 }
 function openMemo(id){
   const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===id);
   if(!t||t._p)return;
-  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand,area:t.area,completed:t.completed,dirty:false};
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',completed:t.completed,dirty:false};
   render();
-  setTimeout(()=>{const el=document.getElementById('memo-ta');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},60);
+  setTimeout(()=>{const el=document.getElementById('memo-ta');if(el)el.focus();},60);
 }
 function closeMemo(){
   if(S.memoModal&&S.memoModal.dirty)saveMemo();
   else{S.memoModal=null;render();}
 }
-function setMemoText(val){if(S.memoModal){S.memoModal.memo=val;S.memoModal.dirty=true;}}
+function setMemoField(field,val){if(S.memoModal){S.memoModal[field]=val;S.memoModal.dirty=true;}}
+function toggleMemoField(field,val){if(S.memoModal){S.memoModal[field]=S.memoModal[field]===val?'':val;S.memoModal.dirty=true;render();}}
 async function saveMemo(){
   if(!S.memoModal)return;
   const m=S.memoModal;
   const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===m.id);
   if(!t){S.memoModal=null;render();return;}
-  const prev=t.memo;
-  t.memo=m.memo;
+  const prev={memo:t.memo,brand:t.brand,area:t.area};
+  t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;
   S.memoModal=null;render();
   try{
-    await notion('PATCH',`/pages/${m.id}`,{properties:{'메모':{rich_text:[{text:{content:m.memo}}]}}});
-  }catch(e){t.memo=prev;toast('메모 저장 실패: '+e.message,true);render();}
+    const props={'메모':{rich_text:[{text:{content:m.memo}}]}};
+    if(m.brand)props['브랜드']={select:{name:m.brand}};
+    else props['브랜드']={select:null};
+    if(m.area)props['영역']={select:{name:m.area}};
+    else props['영역']={select:null};
+    await notion('PATCH',`/pages/${m.id}`,{properties:props});
+  }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
 }
 function rMemoModal(){
   if(!S.memoModal)return'';
   const m=S.memoModal;
+  const isPerfTeam=S.team==='퍼포먼스';
   const bc=m.brand?BRAND_COLOR[m.brand]||'#9b9794':null;
   const ac2=m.area?AREA_COLOR[m.area]||'#9b9794':null;
   return`<div onclick="if(event.target===this)closeMemo()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
@@ -333,20 +377,33 @@ function rMemoModal(){
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(m.text)}</div>
-            <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
-              ${m.completed?`<span style="font-size:9px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:4px;padding:1px 6px;font-weight:700">완료</span>`:''}
-              ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(m.brand)}</span>`:''}
-              ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(m.area)}</span>`:''}
-            </div>
           </div>
           <button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
         </div>
       </div>
-      <div style="padding:14px 18px;flex:1;overflow-y:auto">
-        <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">메모</div>
-        <textarea id="memo-ta" oninput="setMemoText(this.value)" placeholder="메모를 입력하세요…"
-          style="width:100%;min-height:180px;background:#f9f8f6;border:1.5px solid #e8e4de;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;transition:border-color .15s"
-          onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e8e4de'">${esc(m.memo)}</textarea>
+      <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px">
+        ${isPerfTeam?`<div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">브랜드</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const sel=m.brand===b;return`<button onclick="toggleMemoField('brand','${esc(b)}')"
+              style="font-size:9px;font-weight:700;padding:4px 9px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">영역</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=m.area===a;return`<button onclick="toggleMemoField('area','${esc(a)}')"
+              style="font-size:9px;font-weight:700;padding:4px 9px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
+          </div>
+        </div>`:''}
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">메모</div>
+          <textarea id="memo-ta" oninput="setMemoField('memo',this.value)" placeholder="메모를 입력하세요…"
+            style="width:100%;min-height:150px;background:#f9f8f6;border:1.5px solid #e8e4de;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;transition:border-color .15s"
+            onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e8e4de'">${esc(m.memo)}</textarea>
+        </div>
       </div>
       <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:flex-end;gap:8px">
         <button onclick="S.memoModal.dirty=false;S.memoModal=null;render()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
@@ -428,8 +485,64 @@ async function saveAddSched(){
   }catch(e){toast('추가 실패: '+e.message,true);}
   render();
 }
-function setBrand(v){S.addBrand=v;}
-function setArea(v){S.addArea=S.addArea===v?null:v;}
+function setBrand(v){S.addBrand=v;_saveInput();}
+function setArea(v){S.addArea=S.addArea===v?null:v;_saveInput();}
+function _saveInput(){const e=document.getElementById('ti');S._ti=e?e.value:'';}
+function _restoreInput(){const e=document.getElementById('ti');if(e&&S._ti){e.value=S._ti;e.focus();}}
+function setIncSort(v){S.incSort=v;render();}
+function sortInc(arr){
+  const s=S.incSort;
+  if(s==='brand')return[...arr].sort((a,b)=>(a.brand||'zzz').localeCompare(b.brand||'zzz'));
+  if(s==='area')return[...arr].sort((a,b)=>(a.area||'zzz').localeCompare(b.area||'zzz'));
+  if(s==='manual'){
+    const k=`${S.selectedDate}-${S.user}`;
+    const order=S.manualOrder[k];
+    if(!order)return arr;
+    return[...arr].sort((a,b)=>{const ai=order.indexOf(a.id),bi=order.indexOf(b.id);return(ai<0?999:ai)-(bi<0?999:bi);});
+  }
+  return arr;
+}
+let _dragId=null;
+function dStart(e,id){_dragId=id;e.dataTransfer.effectAllowed='move';e.target.style.opacity='.5';}
+function dEnd(e){e.target.style.opacity='1';_dragId=null;document.querySelectorAll('.drag-over').forEach(r=>r.classList.remove('drag-over'));}
+function dOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';
+  const row=e.target.closest('.row');document.querySelectorAll('.row.drag-over').forEach(r=>r.classList.remove('drag-over'));
+  if(row)row.classList.add('drag-over');}
+function dDropCard(e,targetId,zone){
+  e.preventDefault();e.stopPropagation();
+  if(!_dragId||_dragId===targetId)return;
+  const k=`${S.selectedDate}-${S.user}`;
+  const dz=S.dropZone[k]||(S.dropZone[k]=[]);
+  const wasInDrop=dz.includes(_dragId);
+  // 이동: 원래 위치에서 제거
+  if(wasInDrop)S.dropZone[k]=dz.filter(x=>x!==_dragId);
+  // 타겟 존으로 삽입
+  if(zone==='drop'){
+    const arr=S.dropZone[k]||(S.dropZone[k]=[]);
+    const ti=arr.indexOf(targetId);
+    if(ti>=0)arr.splice(ti,0,_dragId);else arr.push(_dragId);
+  } else {
+    // inc 존: manual order 업데이트
+    const inc=(S.tasks[k]||[]).filter(t=>!t.completed&&!(S.dropZone[k]||[]).includes(t.id));
+    const order=inc.map(t=>t.id);
+    if(!order.includes(_dragId))order.push(_dragId);
+    const fi=order.indexOf(_dragId),ti=order.indexOf(targetId);
+    if(fi>=0&&ti>=0){order.splice(fi,1);order.splice(ti,0,_dragId);}
+    S.manualOrder[k]=order;
+    S.incSort='manual';
+  }
+  _dragId=null;render();
+}
+function dDropZone(e,zone){
+  e.preventDefault();
+  if(!_dragId)return;
+  const k=`${S.selectedDate}-${S.user}`;
+  const dz=S.dropZone[k]||(S.dropZone[k]=[]);
+  const wasInDrop=dz.includes(_dragId);
+  if(zone==='drop'&&!wasInDrop){dz.push(_dragId);}
+  else if(zone==='inc'&&wasInDrop){S.dropZone[k]=dz.filter(x=>x!==_dragId);}
+  _dragId=null;render();
+}
 function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
 
 /* ══════════════════════════════════════
@@ -529,52 +642,17 @@ function tRow(t,ac,dim){
   const bc=t.brand?BRAND_COLOR[t.brand]||'#9b9794':null;
   const ac2=t.area?AREA_COLOR[t.area]||'#9b9794':null;
   const isPerfTeam=S.team==='퍼포먼스';
-  const isEditing=S.editingTask&&S.editingTask.id===t.id;
-
-  if(isEditing&&!dim){
-    const e=S.editingTask;
-    const ebc=e.brand?BRAND_COLOR[e.brand]||'#9b9794':null;
-    const eac=e.area?AREA_COLOR[e.area]||'#9b9794':null;
-    return`<div class="row" style="background:#fff;border:2px solid ${ac};border-radius:10px;padding:12px;margin-bottom:7px;box-shadow:0 2px 8px ${ac}22">
-      <div style="display:flex;flex-direction:column;gap:8px;width:100%">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:10px;font-weight:700;color:${ac};letter-spacing:.5px">수정 중</span>
-          <div style="display:flex;gap:5px">
-            <button onclick="cancelEditTask()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
-            <button onclick="saveEditTask()" style="background:${ac};border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
-          </div>
-        </div>
-        <input value="${esc(e.text)}" oninput="setEditTaskField('text',this.value)"
-          style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:7px 10px;font-size:13px;color:#1c1a17;outline:none"
-          onkeydown="if(event.key==='Enter')saveEditTask()"/>
-        ${isPerfTeam?`<div>
-          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">브랜드</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const sel=e.brand===b;return`<button onclick="toggleEditTaskField('brand','${esc(b)}');render()"
-              style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;transition:all .12s;
-              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
-          </div>
-        </div>
-        <div>
-          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">영역</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=e.area===a;return`<button onclick="toggleEditTaskField('area','${esc(a)}');render()"
-              style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;transition:all .12s;
-              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
-          </div>
-        </div>`:''}
-      </div>
-    </div>`;
-  }
 
   const tags=isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px">
     ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
     ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
   </div>`:'';
 
-  return`<div class="row" style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
+  const dzone=t._dzone||'inc';
+  const dragAttr=isPerfTeam&&!dim&&!t._p?`draggable="true" ondragstart="dStart(event,'${t.id}')" ondragend="dEnd(event)" ondragover="dOver(event)" ondrop="dDropCard(event,'${t.id}','${dzone}')"`:''
+  return`<div class="row" ${dragAttr} style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
-    box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}">
+    box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}${isPerfTeam&&!dim?';cursor:grab':''}">
     <button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
       style="width:20px;height:20px;border-radius:5px;flex-shrink:0;margin-top:2px;
       border:2px solid ${t.completed?ac:'#d4d0ca'};background:${t.completed?ac:'transparent'};
@@ -591,11 +669,7 @@ function tRow(t,ac,dim){
       </div>
       ${tags}
     </div>
-    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
-      ${t._p?`<div class="sp"></div>`:dim?`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;opacity:.6;line-height:1">×</button>`:`
-        <button onclick="startEditTask('${t.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
-        <button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;opacity:.6;line-height:1">×</button>`}
-    </div>
+    ${t._p?`<div class="sp" style="flex-shrink:0"></div>`:`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;flex-shrink:0;opacity:.6;line-height:1">×</button>`}
   </div>`;
 }
 
@@ -781,17 +855,43 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
     </div>
   </div>`;
 
+  const k=`${S.selectedDate}-${S.user}`;
+  const dzIds=S.dropZone[k]||[];
+  const incNorm=inc.filter(t=>!dzIds.includes(t.id));
+  const dropItems=dzIds.map(id=>inc.find(t=>t.id===id)).filter(Boolean);
+  dropItems.forEach(t=>t._dzone='drop');
+  const sortedInc=sortInc(incNorm);
+  const sortBtns=[{k:'time',l:'시간순'},{k:'brand',l:'브랜드'},{k:'area',l:'영역'},{k:'manual',l:'수동'}];
   return`<div class="perf-grid">
-    <!-- 좌: 미완료 -->
+    <!-- 좌: 미완료 + Drop -->
     <div class="perf-col-inc">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:3px;height:14px;border-radius:2px;background:${ac};display:inline-block"></span>
           <span style="font-size:12px;font-weight:800;color:#1c1a17">미완료</span>
-          ${inc.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:8px;padding:2px 7px;font-weight:700">${inc.length}</span>`:''}
+          ${incNorm.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:8px;padding:2px 7px;font-weight:700">${incNorm.length}</span>`:''}
+        </div>
+        ${incNorm.length>1?`<div style="display:flex;gap:2px">
+          ${sortBtns.map(b=>`<button onclick="setIncSort('${b.k}')" style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;
+            background:${S.incSort===b.k?ac:'#f5f3ef'};border:1px solid ${S.incSort===b.k?ac:'#e8e4de'};color:${S.incSort===b.k?'#fff':'#9b9794'}">${b.l}</button>`).join('')}
+        </div>`:''}
+      </div>
+      <div ondragover="dOver(event)" ondrop="dDropZone(event,'inc')" style="min-height:40px">
+        ${S.tL&&!tasks.length?skeletons:rTaskList(sortedInc,ac,false)}
+      </div>
+      <!-- Drop 섹션 -->
+      <div style="margin-top:14px">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
+          <span style="width:3px;height:14px;border-radius:2px;background:#f59e0b;display:inline-block"></span>
+          <span style="font-size:12px;font-weight:800;color:#1c1a17">Drop</span>
+          ${dropItems.length?`<span style="font-size:10px;background:#f59e0b18;color:#f59e0b;border-radius:8px;padding:2px 7px;font-weight:700">${dropItems.length}</span>`:''}
+        </div>
+        <div ondragover="dOver(event)" ondrop="dDropZone(event,'drop')" style="min-height:50px;background:#fefce8;border:1.5px dashed #fde68a;border-radius:10px;padding:8px;transition:background .15s">
+          ${dropItems.length?dropItems.map(t=>tRow(t,ac,false)).join(''):`<div style="text-align:center;padding:14px 0">
+            <div style="font-size:11px;color:#ca8a04">미완료 카드를 여기로 드래그</div>
+          </div>`}
         </div>
       </div>
-      ${S.tL&&!tasks.length?skeletons:rTaskList(inc,ac,false)}
     </div>
     <!-- 중간: 추가 -->
     ${midCol}
@@ -858,6 +958,152 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           <button onclick="startAddSched()" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:13px;color:#9b9794;display:flex;align-items:center;justify-content:center;margin-left:auto;line-height:1">+</button>
         </div>
         ${rSched(sched)}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ══════════════════════════════════════
+   디자인 요청 레이아웃
+══════════════════════════════════════ */
+function rDesignLayout(){
+  const reqs=S.designReqs||[];
+  const tc='#8b5cf6';
+  const skeletons=`<div class="sk" style="height:60px;margin-bottom:8px"></div><div class="sk" style="height:60px;margin-bottom:8px;opacity:.7"></div><div class="sk" style="height:60px;opacity:.4"></div>`;
+
+  const addForm=S.designAdd?`<div style="background:#fff;border:2px solid ${tc};border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px ${tc}22">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:10px;font-weight:700;color:${tc};letter-spacing:.5px">새 디자인 요청</span>
+      <div style="display:flex;gap:5px">
+        <button onclick="S.designAdd=null;render()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:4px 12px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
+        <button onclick="addDesignReq()" style="background:${tc};border:none;border-radius:5px;padding:4px 12px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">등록</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input value="${esc(S.designAdd.title)}" oninput="S.designAdd.title=this.value" placeholder="요청 제목"
+        style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:13px;color:#1c1a17;outline:none"
+        onkeydown="if(event.key==='Enter')addDesignReq()"/>
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">브랜드</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${D_BRANDS.map(b=>{const c=D_BRAND_COLOR[b]||'#9b9794';const sel=S.designAdd.brand===b;return`<button onclick="S.designAdd.brand=S.designAdd.brand==='${esc(b)}'?'':'${esc(b)}';render()"
+            style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;
+            background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1">
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">중요도</div>
+          <div style="display:flex;gap:4px">
+            ${['긴급','보통','낮음'].map(p=>{const c=D_PRIORITY_COLOR[p];const sel=S.designAdd.priority===p;return`<button onclick="S.designAdd.priority='${p}';render()"
+              style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${p}</button>`;}).join('')}
+          </div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px">데드라인</div>
+          <input type="date" value="${S.designAdd.deadline||''}" onchange="S.designAdd.deadline=this.value"
+            style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:5px 8px;font-size:11px;color:#1c1a17;outline:none"/>
+        </div>
+      </div>
+    </div>
+  </div>`:'';
+
+  const detailModal=S.designDetail?rDesignDetailModal():'';
+
+  return`<div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:3px;height:18px;border-radius:2px;display:inline-block;background:${tc}"></span>
+        <span style="font-size:14px;font-weight:800;color:#1c1a17">디자인 요청</span>
+        <span style="font-size:10px;background:${tc}18;color:${tc};border-radius:10px;padding:2px 8px;font-weight:700">${reqs.length}건</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${!S.designAdd?`<button onclick="S.designAdd={title:'',brand:'',priority:'보통',deadline:''};render()" style="background:${tc};border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer">+ 새 요청</button>`:''}
+        <button onclick="S.designReqs=null;loadDesignReqs()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">↺</button>
+      </div>
+    </div>
+    ${addForm}
+    ${S.dL&&!reqs.length?skeletons:D_STATUS.map(st=>{
+      const items=reqs.filter(r=>r.status===st);
+      if(!items.length)return'';
+      const sc=D_STATUS_COLOR[st];
+      return`<div style="margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${sc}"></span>
+          <span style="font-size:11px;font-weight:700;color:#1c1a17">${st}</span>
+          <span style="font-size:10px;color:#9b9794">${items.length}</span>
+        </div>
+        ${items.map(r=>rDesignCard(r)).join('')}
+      </div>`;
+    }).join('')}
+    ${!S.dL&&!reqs.length?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
+      <div style="font-size:20px;margin-bottom:8px">🎨</div>
+      <div style="font-size:13px;color:#9b9794">등록된 디자인 요청이 없어요.</div>
+    </div>`:''}
+  </div>${detailModal}`;
+}
+function rDesignCard(r){
+  const sc=D_STATUS_COLOR[r.status];
+  const pc=D_PRIORITY_COLOR[r.priority]||'#9b9794';
+  const bc=r.brand?D_BRAND_COLOR[r.brand]||'#9b9794':null;
+  const dl=r.deadline?r.deadline.slice(5).replace('-','/'):'';
+  return`<div onclick="openDesignDetail('${r.id}')" class="row" style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="width:3px;height:28px;border-radius:2px;background:${sc};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:#1c1a17;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.title)}</div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
+          <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:1px 5px;font-weight:700">${r.priority}</span>
+          ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 5px;font-weight:700">${esc(r.brand)}</span>`:''}
+          ${dl?`<span style="font-size:9px;color:#9b9794">${dl}</span>`:''}
+        </div>
+      </div>
+      <select onclick="event.stopPropagation()" onchange="updateDesignStatus('${r.id}',this.value)" style="font-size:10px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;color:${sc};font-weight:700;cursor:pointer;outline:none">
+        ${D_STATUS.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+  </div>`;
+}
+function rDesignDetailModal(){
+  const d=S.designDetail;if(!d)return'';
+  const sc=D_STATUS_COLOR[d.status];
+  const pc=D_PRIORITY_COLOR[d.priority]||'#9b9794';
+  const bc=d.brand?D_BRAND_COLOR[d.brand]||'#9b9794':null;
+  return`<div onclick="if(event.target===this)closeDesignDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:15px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(d.title)}</div>
+            <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">
+              <span style="font-size:9px;background:${sc}18;color:${sc};border:1px solid ${sc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.status}</span>
+              <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.priority}</span>
+              ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:2px 7px;font-weight:700">${esc(d.brand)}</span>`:''}
+            </div>
+          </div>
+          <button onclick="closeDesignDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
+        </div>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${d.deadline?`<div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:10px;font-weight:700;color:#9b9794;width:60px">데드라인</span>
+            <span style="font-size:12px;color:#1c1a17;font-weight:600">${d.deadline}</span>
+          </div>`:''}
+          ${d.edited?`<div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:10px;font-weight:700;color:#9b9794;width:60px">최종수정</span>
+            <span style="font-size:12px;color:#1c1a17">${new Date(d.edited).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+          </div>`:''}
+          <div style="margin-top:6px">
+            <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px">상태 변경</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              ${D_STATUS.map(s=>{const c=D_STATUS_COLOR[s];const sel=d.status===s;return`<button onclick="updateDesignStatus('${d.id}','${s}');closeDesignDetail()"
+                style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;
+                background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${s}</button>`;}).join('')}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -935,25 +1181,29 @@ function render(){
   const dc=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
   const ac=widx!==null?dc[widx]:'#9b9794';
   const isPerfTeam=S.team==='퍼포먼스';
+  const isDesignTeam=S.team==='디자인';
 
   const toastHtml=S.toast?`<div style="position:fixed;bottom:20px;right:20px;z-index:999;
     background:${S.toast.err?'#fef2f2':'#f0fdf4'};border:1px solid ${S.toast.err?'#fecaca':'#bbf7d0'};
     border-radius:8px;padding:10px 16px;font-size:12px;font-weight:600;
     color:${S.toast.err?'#b91c1c':'#15803d'};animation:fadeIn .2s ease;box-shadow:0 4px 12px rgba(0,0,0,0.08)">${esc(S.toast.m)}</div>`:'';
 
-  const mainContent=isPerfTeam
-    ?rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks)
-    :rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks);
+  const mainContent=isDesignTeam
+    ?rDesignLayout()
+    :isPerfTeam
+      ?rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks)
+      :rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks);
 
   app.innerHTML=`
     ${toastHtml}
     ${rTeamBar()}
     ${rHeader()}
-    ${rCalendar()}
+    ${isDesignTeam?'':rCalendar()}
     <div class="main-pad" style="max-width:1160px;margin:0 auto">
       ${mainContent}
     </div>
     ${rMemoModal()}`;
+  _restoreInput();
 }
 
 /* ══════════════════════════════════════
@@ -964,10 +1214,10 @@ function selTeam(t){
   localStorage.setItem(TEAM_KEY,t);
   const members=TEAM_MEMBERS[t]||[];
   S.user=members[0]||S.user;
-  S.tasks={};S.sched={};
+  S.tasks={};S.sched={};S.designReqs=null;S.designAdd=null;S.designDetail=null;
   render();
-  loadTasksByDate(S.selectedDate,S.user);
-  setTimeout(()=>loadSched(S.user),400);
+  if(t==='디자인'){loadDesignReqs();}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);}
 }
 function selUser(u){
   S.user=u;S.tasks={};render();
@@ -1021,8 +1271,8 @@ function resetToken(){
 ══════════════════════════════════════ */
 render();
 if(S.token){
-  loadTasksByDate(S.selectedDate,S.user);
-  setTimeout(()=>loadSched(S.user),400);
+  if(S.team==='디자인'){loadDesignReqs();}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);}
 }
 </script>
 </body>
