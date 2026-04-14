@@ -298,6 +298,16 @@ function startEditSched(id){
   render();
 }
 function cancelEditSched(){S.editingSched=null;render();}
+async function doDelSched(id){
+  if(!confirm('이 고정업무를 삭제할까요?'))return;
+  const widx=dateToWeekday(S.selectedDate);
+  if(widx===null)return;
+  const k=`${widx}-${S.user}`;
+  const prev=[...(S.sched[k]||[])];
+  S.sched[k]=(S.sched[k]||[]).filter(x=>x.id!==id);render();
+  try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('고정업무 삭제됨');}
+  catch(e){S.sched[k]=prev;toast('삭제 실패: '+e.message,true);render();}
+}
 function saveEditSched(){
   if(!S.editingSched)return;
   const e=S.editingSched;
@@ -576,12 +586,15 @@ function rSched(sched){
         </div>
       </div>`;
     }
-    return`<div style="background:${fl?'#faf9f7':st.bg};border:1px ${fl?'dashed':'solid'} ${fl?'#e8e4de':st.d+'33'};border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:box-shadow .15s;position:relative" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
+    return`<div style="background:${fl?'#faf9f7':st.bg};border:1px ${fl?'dashed':'solid'} ${fl?'#e8e4de':st.d+'33'};border-radius:10px;padding:10px 12px;margin-bottom:8px;transition:box-shadow .15s;position:relative" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
         <span style="font-size:9px;background:${fl?'#f0eee9':st.d+'18'};color:${fl?'#9b9794':st.t};border:1px solid ${fl?'#e8e4de':st.d+'33'};border-radius:4px;padding:1px 5px;font-weight:700">${s.type||'유동'}</span>
         <span style="font-size:10px;color:${fl?'#9b9794':st.t};font-weight:600">${SL[s.slot]||s.slot}</span>
         ${s.duration?`<span style="font-size:10px;color:${fl?'#b0ada8':st.d};margin-left:auto;font-weight:700">${esc(s.duration)}</span>`:''}
-        <button class="sched-edit-btn" onclick="event.stopPropagation();startEditSched('${s.id}')" style="opacity:0;transition:opacity .15s;background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer;margin-left:${s.duration?'4px':'auto'}">✎</button>
+        <div class="sched-edit-btn" style="opacity:0;transition:opacity .15s;display:flex;gap:3px;margin-left:${s.duration?'4px':'auto'}">
+          <button onclick="event.stopPropagation();startEditSched('${s.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
+          <button onclick="event.stopPropagation();doDelSched('${s.id}')" style="background:none;border:1px solid #fecaca;border-radius:4px;padding:2px 6px;font-size:9px;color:#ef4444;cursor:pointer">삭제</button>
+        </div>
       </div>
       <div style="font-size:12px;font-weight:700;color:#1c1a17;margin-bottom:3px">${esc(s.label)}</div>
       ${s.desc?`<p style="margin:0;font-size:10px;color:#6b6762;line-height:1.5">${esc(s.desc)}</p>`:''}
