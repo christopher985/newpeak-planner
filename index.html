@@ -86,8 +86,8 @@ const TEAM_COLOR = {
 };
 const BRANDS = ['진수성찬','얼김치','한국고려삼','올라잇클래스','히든','기타'];
 const BRAND_COLOR = {
-  '진수성찬':'#e05c1a','얼김치':'#3b82f6','한국고려삼':'#10b981',
-  '올라잇클래스':'#8b5cf6','히든':'#6b7280','기타':'#9b9794'
+  '진수성찬':'#3b82f6','얼김치':'#e05c1a','한국고려삼':'#ef4444',
+  '올라잇클래스':'#8b5cf6','히든':'#6b7280','기타':'transparent'
 };
 const AREAS = ['자사몰','스마트스토어','CRM','메타광고','GFA/검색광고','브랜드커넥트','유튜브','인스타그램','기타'];
 const AREA_COLOR = {
@@ -599,9 +599,9 @@ function rMemoModal(){
         ${isPerfTeam?`<div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">브랜드</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const sel=m.brand===b;return`<button onclick="toggleMemoField('brand','${esc(b)}')"
+            ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const isTr=c==='transparent';const sel=m.brand===b;return`<button onclick="toggleMemoField('brand','${esc(b)}')"
               style="font-size:9px;font-weight:700;padding:4px 9px;border-radius:5px;cursor:pointer;transition:all .12s;
-              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
+              background:${sel?(isTr?'#f5f3ef':c):'#f5f3ef'};border:1px solid ${sel?(isTr?'#1c1a17':c):'#e8e4de'};color:${sel?(isTr?'#1c1a17':'#fff'):(isTr?'#6b6762':c)}">${esc(b)}</button>`;}).join('')}
           </div>
         </div>
         <div>
@@ -1029,7 +1029,7 @@ function tRow(t,ac,dim){
 
   const hasTags=isPerfTeam&&!dim&&(bc||ac2);
   const tagsHtml=hasTags?`<div style="display:flex;gap:5px;flex-wrap:wrap">
-    ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
+    ${bc?`<span style="font-size:9px;background:${bc==='transparent'?'#f5f3ef':bc};color:${bc==='transparent'?'#6b6762':'#fff'};border:1px solid ${bc==='transparent'?'#e8e4de':bc};border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
     ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
   </div>`:'';
 
@@ -1194,9 +1194,9 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
     `<div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
       <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">브랜드</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
-        ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const a=S.addBrand===b;return`<button onclick="setBrand('${esc(b)}');render()"
+        ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const isTr=c==='transparent';const a=S.addBrand===b;return`<button onclick="setBrand('${esc(b)}');render()"
           style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
-          background:${a?c:'#f5f3ef'};border:1.5px solid ${a?c:'#e8e4de'};color:${a?'#fff':c}">${esc(b)}</button>`;}).join('')}
+          background:${a?(isTr?'#f5f3ef':c):'#f5f3ef'};border:1.5px solid ${a?(isTr?'#1c1a17':c):'#e8e4de'};color:${a?(isTr?'#1c1a17':'#fff'):(isTr?'#6b6762':c)}">${esc(b)}</button>`;}).join('')}
       </div>
       <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">영역</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
