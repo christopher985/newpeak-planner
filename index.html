@@ -442,11 +442,11 @@ async function saveMemo(){
   const m=S.memoModal;
   const{t}=findTask(m.id);
   if(!t){S.memoModal=null;render();return;}
-  const prev={memo:t.memo,brand:t.brand,area:t.area,color:t.color};
-  t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;t.color=m.color||null;
+  const prev={text:t.text,memo:t.memo,brand:t.brand,area:t.area,color:t.color};
+  t.text=m.text;t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;t.color=m.color||null;
   S.memoModal=null;render();
   try{
-    const props={'메모':{rich_text:[{text:{content:m.memo}}]}};
+    const props={'메모':{rich_text:[{text:{content:m.memo}}]},'업무명':{title:[{text:{content:m.text}}]}};
     if(m.brand)props['브랜드']={select:{name:m.brand}};
     else props['브랜드']={select:null};
     if(m.area)props['영역']={select:{name:m.area}};
@@ -467,7 +467,9 @@ function rMemoModal(){
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
           <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(m.text)}</div>
+            <input value="${esc(m.text)}" oninput="setMemoField('text',this.value)"
+              style="width:100%;font-size:14px;font-weight:700;color:#1c1a17;line-height:1.4;background:transparent;border:none;border-bottom:1.5px solid transparent;outline:none;padding:0 0 2px;transition:border-color .15s"
+              onfocus="this.style.borderBottomColor='#3b82f6'" onblur="this.style.borderBottomColor='transparent'"/>
           </div>
           <button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
         </div>
