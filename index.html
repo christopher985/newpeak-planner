@@ -932,9 +932,8 @@ function rCalendar(){
     const ytItems=ytMap[ds]||[];
     const ytIcons=!otherMonth&&ytItems.length?ytItems.map(y=>{
       const ch=y.channel;
-      const chIcon=ch?`<span style="font-size:6px;font-weight:800;color:#fff;background:${ch.color};border-radius:2px;padding:0 2px;line-height:11px;display:inline-block">${ch.label}</span>`:'';
-      return`<span title="${esc(y.title)}${ch?' · '+ch.label:''}" style="display:inline-flex;gap:1px;align-items:center">
-        <span style="font-size:7px;font-weight:800;color:#fff;background:${y.color};border-radius:3px;padding:0 3px;line-height:13px;max-width:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(y.label)}</span>${chIcon}</span>`;
+      const bgColor=ch?ch.color:'#9b9794';
+      return`<span title="${esc(y.title)}${ch?' · '+ch.label:''}" style="font-size:7px;font-weight:800;color:#fff;background:${bgColor};border-radius:3px;padding:0 3px;line-height:13px;display:inline-block;max-width:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(y.label)}</span>`;
     }).join(''):'';
     return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
