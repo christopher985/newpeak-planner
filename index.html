@@ -159,7 +159,7 @@ const YT_BRAND_KW=[
 ];
 // Google Calendar colorId → 판매채널
 const GCAL_CHANNEL_MAP={
-  '11':{label:'자사몰',color:'#e05c1a',icon:'🏠'},   // Tomato
+  '11':{label:'자사몰',color:'#b91c1c',icon:'🏠'},   // Tomato → 진한 빨강
   '2':{label:'스마트',color:'#10b981',icon:'🟢'},     // Sage
   '10':{label:'스마트',color:'#10b981',icon:'🟢'},    // Basil
   '6':{label:'쿠팡',color:'#f59e0b',icon:'🟡'},      // Tangerine
@@ -951,7 +951,7 @@ function rCalendar(){
     const ytIcons=!otherMonth&&ytItems.length?ytItems.map(y=>{
       const ch=y.channel;
       const bgColor=ch?ch.color:'#9b9794';
-      return`<span title="${esc(y.title)}${ch?' · '+ch.label:''}" style="font-size:7px;font-weight:800;color:#fff;background:${bgColor};border-radius:3px;padding:0 3px;line-height:13px;display:inline-block;max-width:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(y.label)}</span>`;
+      return`<span title="${esc(y.title)}${ch?' · '+ch.label:''}" style="font-size:7px;font-weight:800;color:#fff;background:${bgColor};border-radius:3px;padding:0 3px;line-height:13px;display:inline-block;white-space:nowrap">${esc(y.label)}</span>`;
     }).join(''):'';
     return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
