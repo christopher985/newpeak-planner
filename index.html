@@ -512,7 +512,25 @@ async function doAdd(text){
 async function doToggle(id){
   const{t,k}=findTask(id);
   if(!t)return;
-  const nv=!t.completed;t.completed=nv;
+  const nv=!t.completed;
+  const isCarried=k.startsWith('carried-');
+  // 이월 카드 완료 → carried에서 제거, 현재 날짜 완료 목록으로 이동
+  if(nv&&isCarried){
+    S.tasks[k]=(S.tasks[k]||[]).filter(x=>x.id!==id);
+    const todayK=`${S.selectedDate}-${S.user}`;
+    const moved={...t,completed:true,carried:false};
+    (S.tasks[todayK]=S.tasks[todayK]||[]).push(moved);
+    if(S.dropZone[todayK])S.dropZone[todayK]=S.dropZone[todayK].filter(x=>x!==id);
+    render();
+    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}}}});}
+    catch(e){
+      S.tasks[todayK]=(S.tasks[todayK]||[]).filter(x=>x.id!==id);
+      (S.tasks[k]=S.tasks[k]||[]).push(t);
+      toast('업데이트 실패',true);render();
+    }
+    return;
+  }
+  t.completed=nv;
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});}
