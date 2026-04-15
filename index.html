@@ -166,6 +166,17 @@ function fmtDateKr(ds){
   const dow=['일','월','화','수','목','금','토'][new Date(ds+'T00:00:00Z').getUTCDay()];
   return`${parseInt(m)}월 ${parseInt(d)}일 ${dow}요일`;
 }
+function findTask(id){
+  const k=`${S.selectedDate}-${S.user}`;
+  const t=S.tasks[k]?.find(x=>x.id===id);
+  if(t)return{t,k};
+  if(S.team==='퍼포먼스'){
+    const ck='carried-'+S.user;
+    const ct=S.tasks[ck]?.find(x=>x.id===id);
+    if(ct)return{t:ct,k:ck};
+  }
+  return{t:null,k};
+}
 
 /* ══════════════════════════════════════
    Notion API
@@ -253,7 +264,7 @@ async function loadSched(user){
       ]},
     });
     S.sched[k]=res.results
-      .map(p=>({id:p.id,label:txt(p.properties['업무명']),slot:p.properties['시간대']?.select?.name||'오전',weekday:p.properties['요일']?.select?.name||null,type:p.properties['업무타입']?.select?.name||null,duration:txt(p.properties['소요시간']),desc:txt(p.properties['설명'])}))
+      .map(p=>({id:p.id,label:txt(p.properties['업무명']),slot:p.properties['시간대']?.select?.name||'오전',weekday:p.properties['요일']?.select?.name||null,recType:p.properties['반복유형']?.select?.name||'요일',monthDay:p.properties['매월일자']?.number||null,type:p.properties['업무타입']?.select?.name||null,duration:txt(p.properties['소요시간']),desc:txt(p.properties['설명'])}))
       .sort((a,b)=>SLOT_ORDER.indexOf(a.slot)-SLOT_ORDER.indexOf(b.slot));
   }catch(e){S.sched[k]=[];}
   S.sL=false;render();
@@ -383,7 +394,7 @@ async function doAdd(text){
   render();
 }
 async function doToggle(id){
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(t=>t.id===id);
+  const{t,k}=findTask(id);
   if(!t)return;
   const nv=!t.completed;t.completed=nv;
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
@@ -392,7 +403,8 @@ async function doToggle(id){
   catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
-  const k=`${S.selectedDate}-${S.user}`,prev=[...(S.tasks[k]||[])];
+  const{t:found,k}=findTask(id);
+  const prev=[...(S.tasks[k]||[])];
   S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id);
   if(S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
@@ -400,7 +412,7 @@ async function doDel(id){
   catch(e){S.tasks[k]=prev;toast('삭제 실패',true);render();}
 }
 function openMemo(id){
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===id);
+  const{t}=findTask(id);
   if(!t||t._p)return;
   S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',completed:t.completed,dirty:false};
   render();
@@ -415,7 +427,7 @@ function toggleMemoField(field,val){if(S.memoModal){S.memoModal[field]=S.memoMod
 async function saveMemo(){
   if(!S.memoModal)return;
   const m=S.memoModal;
-  const k=`${S.selectedDate}-${S.user}`,t=S.tasks[k]?.find(x=>x.id===m.id);
+  const{t}=findTask(m.id);
   if(!t){S.memoModal=null;render();return;}
   const prev={memo:t.memo,brand:t.brand,area:t.area};
   t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;
@@ -520,7 +532,8 @@ function saveEditSched(){
 function setEditSchedField(field,val){if(S.editingSched)S.editingSched[field]=val;}
 function startAddSched(){
   const wd=dateToKrWeekday(S.selectedDate);
-  S.addingSched={label:'',weekday:wd||'월',slot:'오전',type:'',duration:'',desc:''};
+  const day=parseInt(S.selectedDate.split('-')[2],10);
+  S.addingSched={label:'',recType:'요일',weekday:wd||'월',monthDay:day,slot:'오전',type:'',duration:'',desc:''};
   S.editingSched=null;
   render();
 }
@@ -528,8 +541,9 @@ function cancelAddSched(){S.addingSched=null;render();}
 function setAddSchedField(field,val){if(S.addingSched)S.addingSched[field]=val;}
 async function saveAddSched(){
   if(!S.addingSched||!S.addingSched.label.trim()){toast('업무명을 입력해주세요',true);return;}
-  if(!S.addingSched.weekday){toast('요일을 선택해주세요',true);return;}
   const a=S.addingSched;
+  if(a.recType==='요일'&&!a.weekday){toast('요일을 선택해주세요',true);return;}
+  if(a.recType==='매월'&&(!a.monthDay||a.monthDay<1||a.monthDay>31)){toast('일자를 선택해주세요',true);return;}
   S.addingSched=null;render();
   try{
     const props={
@@ -537,8 +551,10 @@ async function saveAddSched(){
       '담당자':{select:{name:S.user}},
       '활성':{checkbox:true},
       '시간대':{select:{name:a.slot}},
-      '요일':{select:{name:a.weekday}},
+      '반복유형':{select:{name:a.recType}},
     };
+    if(a.recType==='요일')props['요일']={select:{name:a.weekday}};
+    if(a.recType==='매월')props['매월일자']={number:a.monthDay};
     if(a.type)props['업무타입']={select:{name:a.type}};
     if(a.duration.trim())props['소요시간']={rich_text:[{text:{content:a.duration.trim()}}]};
     if(a.desc.trim())props['설명']={rich_text:[{text:{content:a.desc.trim()}}]};
@@ -852,14 +868,30 @@ function rSchedAddForm(){
           style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"
           onkeydown="if(event.key==='Enter')saveAddSched()"/>
       </div>
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">반복 유형</div>
+        <div style="display:flex;gap:3px;margin-bottom:8px">
+          ${['요일','매월'].map(rt=>`<button onclick="setAddSchedField('recType','${rt}');render()"
+            style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
+            background:${a.recType===rt?'#10b981':'#f5f3ef'};border:1px solid ${a.recType===rt?'#10b981':'#e8e4de'};color:${a.recType===rt?'#fff':'#6b6762'}">${rt==='요일'?'요일 반복':'매월 반복'}</button>`).join('')}
+        </div>
+      </div>
       <div style="display:flex;gap:8px">
         <div style="flex:1">
-          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">요일</div>
+          ${a.recType==='요일'?`<div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">요일</div>
           <div style="display:flex;gap:3px">
             ${WEEKDAY_KR.map(w=>`<button onclick="setAddSchedField('weekday','${w}');render()"
               style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
               background:${a.weekday===w?'#1c1a17':'#f5f3ef'};border:1px solid ${a.weekday===w?'#1c1a17':'#e8e4de'};color:${a.weekday===w?'#fff':'#6b6762'}">${w}</button>`).join('')}
-          </div>
+          </div>`
+          :`<div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">매월 일자</div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap">
+            ${[1,5,10,15,20,25].map(d=>`<button onclick="setAddSchedField('monthDay',${d});render()"
+              style="font-size:10px;font-weight:700;padding:4px 8px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${a.monthDay===d?'#1c1a17':'#f5f3ef'};border:1px solid ${a.monthDay===d?'#1c1a17':'#e8e4de'};color:${a.monthDay===d?'#fff':'#6b6762'}">${d}일</button>`).join('')}
+            <input type="number" min="1" max="31" value="${a.monthDay||''}" onchange="setAddSchedField('monthDay',+this.value);render()"
+              style="width:50px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:4px 6px;font-size:10px;color:#1c1a17;outline:none;text-align:center" placeholder="직접"/>
+          </div>`}
         </div>
         <div style="flex-shrink:0;width:90px">
           <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
@@ -936,6 +968,7 @@ function rSched(sched){
         return`<div style="background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 10px;margin-bottom:6px;position:relative;transition:box-shadow .15s" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
           <div style="display:flex;align-items:center;gap:7px">
             <span style="width:3px;height:14px;border-radius:2px;background:${slotColor};display:inline-block;flex-shrink:0"></span>
+            ${s.recType==='매월'?`<span style="font-size:8px;background:#10b98118;color:#10b981;border:1px solid #10b98144;border-radius:3px;padding:0 4px;font-weight:700;flex-shrink:0">${s.monthDay}일</span>`:''}
             <span style="font-size:12px;font-weight:700;color:#1c1a17;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span>
             <div class="sched-edit-btn" style="opacity:0;transition:opacity .15s;display:flex;gap:3px;flex-shrink:0">
               <button onclick="event.stopPropagation();startEditSched('${s.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
@@ -1321,7 +1354,11 @@ function render(){
   const tasks=S.tasks[`${S.selectedDate}-${S.user}`]||[];
   const allSched=S.sched[S.user]||[];
   const curWeekday=widx!==null?WEEKDAY_KR[widx]:null;
-  const sched=curWeekday?allSched.filter(s=>s.weekday===curWeekday):[];
+  const selDay=parseInt(S.selectedDate.split('-')[2],10);
+  const sched=allSched.filter(s=>{
+    if(s.recType==='매월')return s.monthDay===selDay;
+    return curWeekday?s.weekday===curWeekday:false;
+  });
   let inc=tasks.filter(t=>!t.completed);
   const dn=tasks.filter(t=>t.completed);
   // 오늘 이후 날짜: 과거 미완료 이월
