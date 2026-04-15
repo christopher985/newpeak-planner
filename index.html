@@ -1196,7 +1196,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
         ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const isTr=c==='transparent';const a=S.addBrand===b;return`<button onclick="setBrand('${esc(b)}');render()"
           style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
-          background:${a?(isTr?'#f5f3ef':c):'#f5f3ef'};border:1.5px solid ${a?(isTr?'#1c1a17':c):'#e8e4de'};color:${a?(isTr?'#1c1a17':'#fff'):(isTr?'#6b6762':c)}">${esc(b)}</button>`;}).join('')}
+          background:${isTr?'#f5f3ef':c};border:2px solid ${a?(isTr?'#1c1a17':'#fff'):'transparent'};color:${isTr?'#6b6762':'#fff'};opacity:${a?1:.65};box-shadow:${a?'0 0 0 2px '+(isTr?'#1c1a17':c):''}">${esc(b)}</button>`;}).join('')}
       </div>
       <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">영역</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
