@@ -91,6 +91,16 @@ const AREA_COLOR = {
   '자사몰':'#e05c1a','스마트스토어':'#10b981','CRM':'#ef4444','메타광고':'#3b82f6',
   'GFA/검색광고':'#f59e0b','브랜드커넥트':'#8b5cf6','유튜브':'#dc2626','인스타그램':'#ec4899','기타':'#9b9794'
 };
+const CARD_COLORS = [
+  {name:'흰색',bg:'#ffffff',border:'#e8e4de',dot:'#e8e4de'},
+  {name:'빨강',bg:'#fee2e2',border:'#fca5a5',dot:'#ef4444'},
+  {name:'파랑',bg:'#dbeafe',border:'#93c5fd',dot:'#3b82f6'},
+  {name:'노랑',bg:'#fef9c3',border:'#fde047',dot:'#eab308'},
+  {name:'초록',bg:'#dcfce7',border:'#86efac',dot:'#22c55e'},
+  {name:'보라',bg:'#f3e8ff',border:'#c4b5fd',dot:'#8b5cf6'},
+  {name:'회색',bg:'#f3f4f6',border:'#d1d5db',dot:'#9ca3af'},
+];
+const CARD_COLOR_MAP = Object.fromEntries(CARD_COLORS.map(c=>[c.name,c]));
 const UC = {
   '크리스토퍼':'#e05c1a','켈리':'#ec4899','에디':'#3b82f6',
   '마틴':'#10b981',
@@ -141,6 +151,7 @@ let S = {
   user: (TEAM_MEMBERS[_savedTeam]||['크리스토퍼'])[0],
   addBrand: '기타',
   addArea: null,
+  addColor: null,
   calYear: getKSTNow().getUTCFullYear(),
   calMonth: getKSTNow().getUTCMonth(),
   selectedDate: todayStr(),
@@ -250,6 +261,7 @@ function mapTask(p){
     brand:p.properties['브랜드']?.select?.name||null,
     area:p.properties['영역']?.select?.name||null,
     memo:txt(p.properties['메모'])||'',
+    color:p.properties['색상']?.select?.name||null,
   };
 }
 async function loadSched(user){
@@ -374,7 +386,7 @@ async function loadBlockChildren(parentId,blocks){
 async function doAdd(text){
   const k=`${S.selectedDate}-${S.user}`,tid=`t${Date.now()}`;
   const weekday=dateToKrWeekday(S.selectedDate);
-  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',_p:true};
+  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',color:S.team==='퍼포먼스'?S.addColor:null,_p:true};
   (S.tasks[k]=S.tasks[k]||[]).push(tmp);render();
   try{
     const props={
@@ -386,9 +398,10 @@ async function doAdd(text){
     if(weekday) props['요일']={select:{name:weekday}};
     if(S.team==='퍼포먼스'&&S.addBrand) props['브랜드']={select:{name:S.addBrand}};
     if(S.team==='퍼포먼스'&&S.addArea) props['영역']={select:{name:S.addArea}};
+    if(S.team==='퍼포먼스'&&S.addColor) props['색상']={select:{name:S.addColor}};
     const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:props});
     const i=S.tasks[k].findIndex(t=>t.id===tid);
-    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:''};
+    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',color:S.team==='퍼포먼스'?S.addColor:null};
     toast('✓ 추가됨');
   }catch(e){S.tasks[k]=S.tasks[k].filter(t=>t.id!==tid);toast('추가 실패: '+e.message,true);}
   render();
@@ -414,7 +427,7 @@ async function doDel(id){
 function openMemo(id){
   const{t}=findTask(id);
   if(!t||t._p)return;
-  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',completed:t.completed,dirty:false};
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dirty:false};
   render();
   setTimeout(()=>{const el=document.getElementById('memo-ta');if(el)el.focus();},60);
 }
@@ -429,8 +442,8 @@ async function saveMemo(){
   const m=S.memoModal;
   const{t}=findTask(m.id);
   if(!t){S.memoModal=null;render();return;}
-  const prev={memo:t.memo,brand:t.brand,area:t.area};
-  t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;
+  const prev={memo:t.memo,brand:t.brand,area:t.area,color:t.color};
+  t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;t.color=m.color||null;
   S.memoModal=null;render();
   try{
     const props={'메모':{rich_text:[{text:{content:m.memo}}]}};
@@ -438,6 +451,8 @@ async function saveMemo(){
     else props['브랜드']={select:null};
     if(m.area)props['영역']={select:{name:m.area}};
     else props['영역']={select:null};
+    if(m.color)props['색상']={select:{name:m.color}};
+    else props['색상']={select:null};
     await notion('PATCH',`/pages/${m.id}`,{properties:props});
   }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
 }
@@ -472,6 +487,14 @@ function rMemoModal(){
             ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=m.area===a;return`<button onclick="toggleMemoField('area','${esc(a)}')"
               style="font-size:9px;font-weight:700;padding:4px 9px;border-radius:5px;cursor:pointer;transition:all .12s;
               background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
+          </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">카드 색상</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${CARD_COLORS.map(c=>{const sel=m.color===c.name;return`<button onclick="toggleMemoField('color','${c.name}')"
+              style="width:22px;height:22px;border-radius:5px;cursor:pointer;transition:all .12s;
+              background:${c.bg};border:2px solid ${sel?c.dot:c.border};box-shadow:${sel?'0 0 0 2px '+c.dot+'44':'none'}"
+              title="${c.name}"></button>`;}).join('')}
           </div>
         </div>`:''}
         <div>
@@ -813,8 +836,11 @@ function tRow(t,ac,dim){
   </div>`:'';
 
   const dzone=t._dzone||'inc';
+  const cc=!dim&&t.color?CARD_COLOR_MAP[t.color]:null;
+  const cardBg=dim?'#faf9f7':cc?cc.bg:'#fff';
+  const cardBorder=dim?'#e8e4de':cc?cc.border:t.priority===1?ac+'55':'#e8e4de';
   const dragAttr=isPerfTeam&&!dim&&!t._p?`draggable="true" ondragstart="dStart(event,'${t.id}')" ondragend="dEnd(event)" ondragover="dOver(event)" ondrop="dDropCard(event,'${t.id}','${dzone}')" ontouchstart="tStart(event,'${t.id}')" ontouchend="tEnd(event,'${t.id}','${dzone}')"`:''
-  return`<div class="row" ${dragAttr} data-tid="${t.id}" data-tz="${dzone}" style="background:${dim?'#faf9f7':'#fff'};border:1px solid ${dim?'#e8e4de':t.priority===1?ac+'55':'#e8e4de'};border-radius:10px;
+  return`<div class="row" ${dragAttr} data-tid="${t.id}" data-tz="${dzone}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
     box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}${isPerfTeam&&!dim?';cursor:grab':''}">
     <button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
@@ -1016,6 +1042,13 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
         ${AREAS.map(a=>{const c=AREA_COLOR[a]||'#9b9794';const sel=S.addArea===a;return`<button onclick="setArea('${esc(a)}');render()"
           style="font-size:10px;font-weight:700;border-radius:6px;padding:4px 9px;cursor:pointer;transition:all .12s;
           background:${sel?c:'#f5f3ef'};border:1.5px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(a)}</button>`;}).join('')}
+      </div>
+      <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">카드 색상</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
+        ${CARD_COLORS.map(c=>{const sel=S.addColor===c.name;return`<button onclick="S.addColor=S.addColor==='${c.name}'?null:'${c.name}';render()"
+          style="width:24px;height:24px;border-radius:6px;cursor:pointer;transition:all .12s;
+          background:${c.bg};border:2px solid ${sel?c.dot:c.border};box-shadow:${sel?'0 0 0 2px '+c.dot+'44':'none'}"
+          title="${c.name}"></button>`;}).join('')}
       </div>
       <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:7px">
         <input id="ti" placeholder="업무 입력 후 Enter…" enterkeyhint="send"
