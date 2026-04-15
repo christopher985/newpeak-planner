@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>뉴픽 Todo</title>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet"/>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Pretendard Variable','Apple SD Gothic Neo',sans-serif;background:#f5f3ef;color:#1c1a17;min-height:100vh}
@@ -135,7 +136,12 @@ const D_STATUS=['요청','진행 중','수정 요청','완료'];
 const D_STATUS_COLOR={'요청':'#22c55e','진행 중':'#ec4899','수정 요청':'#f59e0b','완료':'#3b82f6'};
 const D_PRIORITY_COLOR={'긴급':'#ef4444','보통':'#f59e0b','낮음':'#22c55e'};
 
-/* ── YouTube 캘린더 연동 (정적 스냅샷) ── */
+/* ── YouTube 캘린더 연동 (Google Calendar API OAuth) ── */
+const GCAL_CLIENT_ID='676763456182-fb87paibmcuuo5m8rap81k0ho9p3g43v.apps.googleusercontent.com';
+const GCAL_SCOPE='https://www.googleapis.com/auth/calendar.readonly';
+const YT_CAL_ID='c_264fb060e1a577a7e108de8e72c93ca7a6ef4bc541dc4dce62ec522e66c89bb7@group.calendar.google.com';
+const GCAL_TOKEN_KEY='newpick-gcal-token';
+
 const YT_BRAND_KW=[
   {kw:'진수성찬',label:'진수',color:'#e05c1a'},
   {kw:'얼김치',label:'얼김치',color:'#3b82f6'},
@@ -151,8 +157,18 @@ const YT_BRAND_KW=[
   {kw:'데미소다',label:'데미소다',color:'#ec4899'},
   {kw:'데자와',label:'데자와',color:'#f97316'},
 ];
-const YT_CAL_ID='c_264fb060e1a577a7e108de8e72c93ca7a6ef4bc541dc4dce62ec522e66c89bb7@group.calendar.google.com';
+// Google Calendar colorId → 판매채널
+const GCAL_CHANNEL_MAP={
+  '11':{label:'자사몰',color:'#e05c1a',icon:'🏠'},   // Tomato
+  '2':{label:'스마트',color:'#10b981',icon:'🟢'},     // Sage
+  '10':{label:'스마트',color:'#10b981',icon:'🟢'},    // Basil
+  '6':{label:'쿠팡',color:'#f59e0b',icon:'🟡'},      // Tangerine
+  '5':{label:'쿠팡',color:'#f59e0b',icon:'🟡'},      // Banana
+};
+
 let YT_EVENTS=[];
+let gcalToken=localStorage.getItem(GCAL_TOKEN_KEY)||'';
+
 function ytMatchBrand(title){
   for(const b of YT_BRAND_KW)if(title.includes(b.kw))return b;
   return null;
@@ -163,9 +179,53 @@ function ytByDate(){
     const b=ytMatchBrand(ev.summary);
     if(!b)return;
     const ds=ev.start;
-    (map[ds]=map[ds]||[]).push({label:b.label,color:b.color,title:ev.summary});
+    const ch=ev.colorId?GCAL_CHANNEL_MAP[ev.colorId]:null;
+    (map[ds]=map[ds]||[]).push({label:b.label,color:b.color,title:ev.summary,channel:ch});
   });
   return map;
+}
+
+function gcalAuth(){
+  if(typeof google==='undefined'){toast('Google 로그인 로딩 중… 잠시 후 다시 시도',true);return;}
+  const client=google.accounts.oauth2.initTokenClient({
+    client_id:GCAL_CLIENT_ID,
+    scope:GCAL_SCOPE,
+    callback:(resp)=>{
+      if(resp.error){toast('Google 인증 실패: '+resp.error,true);return;}
+      gcalToken=resp.access_token;
+      localStorage.setItem(GCAL_TOKEN_KEY,gcalToken);
+      toast('Google Calendar 연동 완료');
+      loadYtEvents();
+    }
+  });
+  client.requestAccessToken();
+}
+function gcalDisconnect(){
+  gcalToken='';localStorage.removeItem(GCAL_TOKEN_KEY);
+  YT_EVENTS=[];render();toast('Google Calendar 연동 해제');
+}
+async function loadYtEvents(){
+  if(!gcalToken)return;
+  const y=S.calYear,m=S.calMonth;
+  const tMin=`${y}-${String(m+1).padStart(2,'0')}-01T00:00:00+09:00`;
+  const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const tMax=`${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}T23:59:59+09:00`;
+  try{
+    const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(YT_CAL_ID)}/events?timeMin=${encodeURIComponent(tMin)}&timeMax=${encodeURIComponent(tMax)}&singleEvents=true&orderBy=startTime&maxResults=100&timeZone=Asia/Seoul`;
+    const res=await fetch(url,{headers:{Authorization:'Bearer '+gcalToken}});
+    if(res.status===401){
+      localStorage.removeItem(GCAL_TOKEN_KEY);gcalToken='';
+      toast('Google 인증 만료 — 재연동 필요',true);YT_EVENTS=[];render();return;
+    }
+    if(!res.ok)throw new Error(res.status);
+    const data=await res.json();
+    YT_EVENTS=(data.items||[]).map(ev=>({
+      start:ev.start?.date||ev.start?.dateTime?.split('T')[0]||'',
+      summary:ev.summary||'',
+      colorId:ev.colorId||null,
+    }));
+    render();
+  }catch(e){toast('캘린더 로딩 실패: '+e.message,true);}
 }
 
 /* ══════════════════════════════════════
@@ -859,12 +919,15 @@ function rCalendar(){
         dots=`<span style="font-size:9px;font-weight:700;color:#7c3aed;line-height:1">${cnt}</span>`;
       }
     }
-    // YouTube 브랜드 아이콘
+    // YouTube 브랜드 + 판매채널 아이콘
     const ytMap=ytByDate();
     const ytItems=ytMap[ds]||[];
-    const ytIcons=!otherMonth&&ytItems.length?ytItems.map(y=>
-      `<span title="${esc(y.title)}" style="font-size:7px;font-weight:800;color:#fff;background:${y.color};border-radius:3px;padding:0 3px;line-height:13px;display:inline-block;max-width:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(y.label)}</span>`
-    ).join(''):'';
+    const ytIcons=!otherMonth&&ytItems.length?ytItems.map(y=>{
+      const ch=y.channel;
+      const chIcon=ch?`<span style="font-size:6px;font-weight:800;color:#fff;background:${ch.color};border-radius:2px;padding:0 2px;line-height:11px;display:inline-block">${ch.label}</span>`:'';
+      return`<span title="${esc(y.title)}${ch?' · '+ch.label:''}" style="display:inline-flex;gap:1px;align-items:center">
+        <span style="font-size:7px;font-weight:800;color:#fff;background:${y.color};border-radius:3px;padding:0 3px;line-height:13px;max-width:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(y.label)}</span>${chIcon}</span>`;
+    }).join(''):'';
     return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
       ${dots?`<div class="cal-dots">${dots}</div>`:''}
@@ -881,6 +944,12 @@ function rCalendar(){
         </div>
         <button onclick="moveMonth(1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">›</button>
       </div>
+      ${!isDesign?`<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:6px;gap:6px">
+        ${gcalToken
+          ?`<span style="font-size:9px;color:#10b981;font-weight:700">● YouTube 연동됨</span>
+            <button onclick="gcalDisconnect()" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">해제</button>`
+          :`<button onclick="gcalAuth()" style="background:#fff;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;color:#1c1a17;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.06)">📅 YouTube 캘린더 연동</button>`}
+      </div>`:''}
       <div class="cal-grid">${DAY_NAMES.map(n=>`<div class="cal-day-hdr${n==='일'?' sun':n==='토'?' sat':''}">${n}</div>`).join('')}${cellHtml}</div>
     </div>
   </div>`;
@@ -1534,7 +1603,7 @@ function moveMonth(dir){
   S.calMonth+=dir;
   if(S.calMonth>11){S.calMonth=0;S.calYear++;}
   if(S.calMonth<0){S.calMonth=11;S.calYear--;}
-  render();
+  render();loadYtEvents();
 }
 function goToday(){
   const n=getKSTNow();
@@ -1542,6 +1611,7 @@ function goToday(){
   S.selectedDate=todayStr();render();
   loadTasksByDate(S.selectedDate,S.user);
   setTimeout(()=>loadSched(S.user),400);
+  loadYtEvents();
 }
 function addTask(){
   const e=document.getElementById('ti'),t=(e?.value||'').trim();
@@ -1569,17 +1639,9 @@ function resetToken(){
 /* ══════════════════════════════════════
    초기화
 ══════════════════════════════════════ */
-// YouTube 캘린더 스냅샷 (Google Calendar MCP → 2026-04-15 기준)
-YT_EVENTS=[
-  {start:'2026-04-02',summary:'러블리쏭 X 얼김치'},
-  {start:'2026-04-05',summary:'마리코리아 X 진수성찬'},
-  {start:'2026-04-08',summary:'코이티비X진수성찬'},
-  {start:'2026-04-13',summary:'그맛 X 진수성찬'},
-  {start:'2026-04-15',summary:'박과장X나랑드사이다'},
-  {start:'2026-04-20',summary:'89부부 X 진수성찬'},
-  {start:'2026-04-27',summary:'콜미진 X 한국고려삼(프리미엄)'},
-];
 render();
+// Google Calendar 자동 로딩 (토큰이 있으면)
+if(gcalToken)setTimeout(()=>loadYtEvents(),500);
 if(S.token){
   if(S.team==='디자인'){loadDesignReqs();}
   else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);}
