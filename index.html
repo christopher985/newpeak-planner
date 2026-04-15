@@ -952,10 +952,6 @@ function rCalendar(){
         </div>
         <button onclick="moveMonth(1)" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;color:#1c1a17;display:flex;align-items:center;justify-content:center">›</button>
       </div>
-      ${!isDesign&&gcalToken?`<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:6px;gap:6px">
-        <span style="font-size:9px;color:#10b981;font-weight:700">● YouTube 연동됨</span>
-        <button onclick="gcalDisconnect()" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">해제</button>
-      </div>`:''}
       <div class="cal-grid">${DAY_NAMES.map(n=>`<div class="cal-day-hdr${n==='일'?' sun':n==='토'?' sat':''}">${n}</div>`).join('')}${cellHtml}</div>
     </div>
   </div>`;
