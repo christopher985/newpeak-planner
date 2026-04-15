@@ -858,10 +858,6 @@ function rCalendar(){
         bgStyle=`background:rgba(139,92,246,0.${String(alpha).padStart(2,'0')});`;
         dots=`<span style="font-size:9px;font-weight:700;color:#7c3aed;line-height:1">${cnt}</span>`;
       }
-    } else {
-      const k=`${ds}-${S.user}`,dt=S.tasks[k]||[];
-      const hasTodo=dt.filter(t=>!t.completed).length>0,hasDone=dt.filter(t=>t.completed).length>0;
-      dots=`${hasTodo?'<div class="cal-dot" style="background:#e05c1a"></div>':''}${hasDone?'<div class="cal-dot" style="background:#22c55e"></div>':''}`;
     }
     // YouTube 브랜드 아이콘
     const ytMap=ytByDate();
@@ -871,7 +867,7 @@ function rCalendar(){
     ).join(''):'';
     return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
-      <div class="cal-dots">${dots}</div>
+      ${dots?`<div class="cal-dots">${dots}</div>`:''}
       ${ytIcons?`<div style="display:flex;gap:1px;justify-content:center;flex-wrap:wrap;margin-top:1px">${ytIcons}</div>`:''}
     </div>`;
   }).join('');
