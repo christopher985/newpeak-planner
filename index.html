@@ -13,6 +13,8 @@
   @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
   @keyframes pulse{0%,100%{opacity:.4}50%{opacity:.7}}
   @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes clearPop{0%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(1deg) scale(1.1)}100%{transform:rotate(-2deg) scale(1)}}
+  .clear-badge:hover{animation:clearPop .3s ease}
   .row{animation:fadeIn .15s ease}
   .row[draggable=true]:active{cursor:grabbing}
   .row.drag-over{border-top:2px solid #e05c1a!important}
@@ -922,12 +924,17 @@ function tRow(t,ac,dim){
   return`<div class="row" ${dragAttr} data-tid="${t.id}" data-tz="${dzone}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
     box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}${isPerfTeam&&!dim?';cursor:grab':''}">
-    <button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
-      style="width:20px;height:20px;border-radius:5px;flex-shrink:0;margin-top:2px;
-      border:2px solid ${t.completed?ac:'#d4d0ca'};background:${t.completed?ac:'transparent'};
-      cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">
-      ${t.completed?`<span style="font-size:10px;color:#fff;font-weight:700">✓</span>`:''}
-    </button>
+    ${t.completed
+      ?`<button class="clear-badge" onclick="toggle('${t.id}')" ${t._p?'disabled':''}
+        style="background:linear-gradient(135deg,${ac},${ac}cc);border:none;border-radius:6px;padding:3px 8px;flex-shrink:0;
+        cursor:pointer;box-shadow:0 2px 6px ${ac}44;transform:rotate(-2deg);transition:all .15s;line-height:1">
+        <span style="font-size:10px;font-weight:900;color:#fff;letter-spacing:1px;font-style:italic;text-shadow:0 1px 2px rgba(0,0,0,0.2)">CLEAR!</span>
+      </button>`
+      :`<button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
+        style="width:20px;height:20px;border-radius:5px;flex-shrink:0;margin-top:2px;
+        border:2px solid #d4d0ca;background:transparent;
+        cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">
+      </button>`}
     <div onclick="openMemo('${t.id}')" style="flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:${hasTags||topLeft?'5px':'0'}">
       ${topLeft?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">${topLeft}</div>`:''}
       <div style="display:flex;align-items:center;gap:6px">
