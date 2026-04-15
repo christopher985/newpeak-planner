@@ -1030,7 +1030,7 @@ function tRow(t,ac,dim){
   const hasTags=isPerfTeam&&!dim&&(bc||ac2);
   const tagsHtml=hasTags?`<div style="display:flex;gap:5px;flex-wrap:wrap">
     ${bc?`<span style="font-size:9px;background:${bc==='transparent'?'#f5f3ef':bc};color:${bc==='transparent'?'#6b6762':'#fff'};border:1px solid ${bc==='transparent'?'#e8e4de':bc};border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
-    ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
+    ${ac2?`<span style="font-size:9px;background:#f5f3ef;color:${ac2};border:1px solid #e8e4de;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
   </div>`:'';
 
   // 좌측 상단: 이월 + 우선순위 + 긴급
