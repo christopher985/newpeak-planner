@@ -899,10 +899,18 @@ function tRow(t,ac,dim){
   const ac2=t.area?AREA_COLOR[t.area]||'#9b9794':null;
   const isPerfTeam=S.team==='퍼포먼스';
 
-  const tags=isPerfTeam&&!dim?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px">
+  const hasTags=isPerfTeam&&!dim&&(bc||ac2);
+  const tagsHtml=hasTags?`<div style="display:flex;gap:5px;flex-wrap:wrap">
     ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.brand)}</span>`:''}
     ${ac2?`<span style="font-size:9px;background:${ac2}18;color:${ac2};border:1px solid ${ac2}44;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
   </div>`:'';
+
+  // 좌측 상단: 이월 + 우선순위 + 긴급
+  const topLeft=!dim?[
+    t.carried?`<span style="font-size:9px;background:#fef2f2;color:#b91c1c;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #fecaca">이월${t.dateStr?'·'+t.dateStr.slice(5).replace('-','/'):''}</span>`:'',
+    t.priority?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:'',
+    us?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:'',
+  ].filter(Boolean).join(''):'';
 
   const dzone=t._dzone||'inc';
   const cc=!dim&&t.color?CARD_COLOR_MAP[t.color]:null;
@@ -918,15 +926,13 @@ function tRow(t,ac,dim){
       cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">
       ${t.completed?`<span style="font-size:10px;color:#fff;font-weight:700">✓</span>`:''}
     </button>
-    <div onclick="openMemo('${t.id}')" style="flex:1;min-width:0;cursor:pointer">
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${t.priority&&!dim?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:''}
-        ${us&&!dim?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:''}
-        ${t.carried&&!dim?`<span style="font-size:9px;background:#fef2f2;color:#b91c1c;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #fecaca">이월${t.dateStr?'·'+t.dateStr.slice(5).replace('-','/'):''}</span>`:''}
-        <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4">${esc(t.text)}</span>
-        ${t.memo?`<span style="font-size:9px;color:#9b9794;margin-left:2px">📝</span>`:''}
+    <div onclick="openMemo('${t.id}')" style="flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:${hasTags||topLeft?'5px':'0'}">
+      ${topLeft?`<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">${topLeft}</div>`:''}
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:13px;color:${t.completed?'#b0ada8':'#1c1a17'};text-decoration:${t.completed?'line-through':'none'};line-height:1.4;flex:1;min-width:0">${esc(t.text)}</span>
+        ${t.memo?`<span style="font-size:14px;color:#9b9794;flex-shrink:0">📝</span>`:''}
       </div>
-      ${tags}
+      ${hasTags?`<div style="display:flex;justify-content:flex-end">${tagsHtml}</div>`:''}
     </div>
     ${t._p?`<div class="sp" style="flex-shrink:0"></div>`:`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;flex-shrink:0;opacity:.6;line-height:1">×</button>`}
   </div>`;
