@@ -49,7 +49,7 @@
     .default-sidebar{width:100%!important}
     .main-pad{padding:14px 12px 32px!important}
     .hpad{padding-left:12px!important;padding-right:12px!important}
-    .sched-edit-btn{opacity:1!important}
+
     .cal-cell{min-height:36px}
     .row{padding:8px 10px!important}
   }
@@ -511,19 +511,87 @@ function rMemoModal(){
     </div>
   </div>`;
 }
+function rSchedEditModal(){
+  if(!S.editingSched)return'';
+  const e=S.editingSched;
+  return`<div onclick="if(event.target===this){cancelEditSched()}" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:14px;font-weight:700;color:#1c1a17">고정업무 수정</div>
+        <button onclick="cancelEditSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
+      </div>
+      <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">업무명</div>
+          <input value="${esc(e.label)}" oninput="setEditSchedField('label',this.value)"
+            style="width:100%;background:#f5f3ef;border:1.5px solid #e8e4de;border-radius:8px;padding:8px 10px;font-size:12px;color:#1c1a17;outline:none;transition:border-color .15s"
+            onfocus="this.style.borderColor='#e05c1a'" onblur="this.style.borderColor='#e8e4de'"/>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">반복 유형</div>
+          <div style="display:flex;gap:4px">
+            ${['요일','매월'].map(rt=>`<button onclick="setEditSchedField('recType','${rt}');render()"
+              style="flex:1;font-size:11px;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;transition:all .12s;
+              background:${e.recType===rt?'#e05c1a':'#f5f3ef'};border:1px solid ${e.recType===rt?'#e05c1a':'#e8e4de'};color:${e.recType===rt?'#fff':'#6b6762'}">${rt==='요일'?'요일 반복':'매월 반복'}</button>`).join('')}
+          </div>
+        </div>
+        ${e.recType==='요일'?`<div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">요일</div>
+          <div style="display:flex;gap:4px">
+            ${WEEKDAY_KR.map(w=>`<button onclick="setEditSchedField('weekday','${w}');render()"
+              style="flex:1;font-size:11px;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;transition:all .12s;
+              background:${e.weekday===w?'#1c1a17':'#f5f3ef'};border:1px solid ${e.weekday===w?'#1c1a17':'#e8e4de'};color:${e.weekday===w?'#fff':'#6b6762'}">${w}</button>`).join('')}
+          </div>
+        </div>`:`<div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">매월 일자</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${[1,5,10,15,20,25].map(d=>`<button onclick="setEditSchedField('monthDay',${d});render()"
+              style="font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;transition:all .12s;
+              background:${e.monthDay===d?'#1c1a17':'#f5f3ef'};border:1px solid ${e.monthDay===d?'#1c1a17':'#e8e4de'};color:${e.monthDay===d?'#fff':'#6b6762'}">${d}일</button>`).join('')}
+            <input type="number" min="1" max="31" value="${e.monthDay||''}" onchange="setEditSchedField('monthDay',+this.value);render()"
+              style="width:55px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:5px 6px;font-size:11px;color:#1c1a17;outline:none;text-align:center" placeholder="직접"/>
+          </div>
+        </div>`}
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">시간대</div>
+          <div style="display:flex;gap:4px">
+            ${SLOT_ORDER.map(sl=>`<button onclick="setEditSchedField('slot','${sl}');render()"
+              style="flex:1;font-size:11px;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;transition:all .12s;
+              background:${e.slot===sl?'#1c1a17':'#f5f3ef'};border:1px solid ${e.slot===sl?'#1c1a17':'#e8e4de'};color:${e.slot===sl?'#fff':'#6b6762'}">${sl}</button>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">설명 (선택)</div>
+          <input value="${esc(e.desc)}" oninput="setEditSchedField('desc',this.value)" placeholder="간단한 메모"
+            style="width:100%;background:#f5f3ef;border:1.5px solid #e8e4de;border-radius:8px;padding:8px 10px;font-size:12px;color:#1c1a17;outline:none;transition:border-color .15s"
+            onfocus="this.style.borderColor='#e05c1a'" onblur="this.style.borderColor='#e8e4de'"/>
+        </div>
+      </div>
+      <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:space-between">
+        <button onclick="doDelSched('${e.id}')" style="background:none;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;color:#ef4444;cursor:pointer">삭제</button>
+        <div style="display:flex;gap:8px">
+          <button onclick="cancelEditSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
+          <button onclick="saveEditSched()" style="background:#e05c1a;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 async function doUpdateSched(id,updates){
   const k=S.user;
   const arr=S.sched[k]||[];
   const s=arr.find(x=>x.id===id);
   if(!s)return;
-  const prev={label:s.label,slot:s.slot,weekday:s.weekday,type:s.type,duration:s.duration,desc:s.desc};
+  const prev={label:s.label,slot:s.slot,weekday:s.weekday,recType:s.recType,monthDay:s.monthDay,type:s.type,duration:s.duration,desc:s.desc};
   Object.assign(s,updates);
   S.editingSched=null;render();
   try{
     const props={};
     if(updates.label!==undefined)props['업무명']={title:[{text:{content:updates.label}}]};
     if(updates.slot!==undefined)props['시간대']={select:{name:updates.slot}};
-    if(updates.weekday!==undefined)props['요일']={select:{name:updates.weekday}};
+    if(updates.recType!==undefined)props['반복유형']={select:{name:updates.recType}};
+    if(updates.recType==='요일'&&updates.weekday!==undefined)props['요일']={select:{name:updates.weekday}};
+    if(updates.recType==='매월'&&updates.monthDay!==undefined)props['매월일자']={number:updates.monthDay};
     if(updates.type!==undefined&&updates.type)props['업무타입']={select:{name:updates.type}};
     if(updates.duration!==undefined)props['소요시간']={rich_text:[{text:{content:updates.duration}}]};
     if(updates.desc!==undefined)props['설명']={rich_text:[{text:{content:updates.desc}}]};
@@ -535,12 +603,13 @@ function startEditSched(id){
   const k=S.user;
   const s=(S.sched[k]||[]).find(x=>x.id===id);
   if(!s)return;
-  S.editingSched={id,label:s.label,weekday:s.weekday||'월',slot:s.slot||'오전',type:s.type||'',duration:s.duration||'',desc:s.desc||''};
+  S.editingSched={id,label:s.label,recType:s.recType||'요일',weekday:s.weekday||'월',monthDay:s.monthDay||1,slot:s.slot||'오전',type:s.type||'',duration:s.duration||'',desc:s.desc||''};
   render();
 }
 function cancelEditSched(){S.editingSched=null;render();}
 async function doDelSched(id){
   if(!confirm('이 고정업무를 삭제할까요?'))return;
+  S.editingSched=null;
   const k=S.user;
   const prev=[...(S.sched[k]||[])];
   S.sched[k]=(S.sched[k]||[]).filter(x=>x.id!==id);render();
@@ -550,7 +619,7 @@ async function doDelSched(id){
 function saveEditSched(){
   if(!S.editingSched)return;
   const e=S.editingSched;
-  doUpdateSched(e.id,{label:e.label,weekday:e.weekday,slot:e.slot,type:e.type,duration:e.duration,desc:e.desc});
+  doUpdateSched(e.id,{label:e.label,recType:e.recType,weekday:e.weekday,monthDay:e.monthDay,slot:e.slot,type:e.type,duration:e.duration,desc:e.desc});
 }
 function setEditSchedField(field,val){if(S.editingSched)S.editingSched[field]=val;}
 function startAddSched(){
@@ -948,58 +1017,11 @@ function rSched(sched){
     return`<div style="margin-bottom:10px">
       <div style="font-size:9px;font-weight:700;color:${slotColor};margin-bottom:5px;letter-spacing:.5px">${sl}</div>
       ${items.map(s=>{
-        const isEditing=S.editingSched&&S.editingSched.id===s.id;
-        if(isEditing){
-          const e=S.editingSched;
-          return`<div style="background:#fff;border:2px solid #e05c1a;border-radius:10px;padding:12px;margin-bottom:6px;box-shadow:0 2px 8px rgba(224,92,26,0.12)">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <span style="font-size:10px;font-weight:700;color:#e05c1a;letter-spacing:.5px">수정 중</span>
-              <div style="display:flex;gap:5px">
-                <button onclick="cancelEditSched()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
-                <button onclick="saveEditSched()" style="background:#e05c1a;border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
-              </div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <div>
-                <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">업무명</div>
-                <input value="${esc(e.label)}" oninput="setEditSchedField('label',this.value)"
-                  style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:12px;color:#1c1a17;outline:none"/>
-              </div>
-              <div style="display:flex;gap:8px">
-                <div style="flex:1">
-                  <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">요일</div>
-                  <div style="display:flex;gap:3px">
-                    ${WEEKDAY_KR.map(w=>`<button onclick="setEditSchedField('weekday','${w}');render()"
-                      style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
-                      background:${e.weekday===w?'#1c1a17':'#f5f3ef'};border:1px solid ${e.weekday===w?'#1c1a17':'#e8e4de'};color:${e.weekday===w?'#fff':'#6b6762'}">${w}</button>`).join('')}
-                  </div>
-                </div>
-                <div style="flex-shrink:0;width:90px">
-                  <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">시간대</div>
-                  <div style="display:flex;gap:3px">
-                    ${SLOT_ORDER.map(sl2=>`<button onclick="setEditSchedField('slot','${sl2}');render()"
-                      style="flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:5px;cursor:pointer;transition:all .12s;
-                      background:${e.slot===sl2?'#1c1a17':'#f5f3ef'};border:1px solid ${e.slot===sl2?'#1c1a17':'#e8e4de'};color:${e.slot===sl2?'#fff':'#6b6762'}">${sl2}</button>`).join('')}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:3px">설명 (선택)</div>
-                <input value="${esc(e.desc)}" oninput="setEditSchedField('desc',this.value)" placeholder="간단한 메모"
-                  style="width:100%;background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:11px;color:#1c1a17;outline:none"/>
-              </div>
-            </div>
-          </div>`;
-        }
-        return`<div style="background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 10px;margin-bottom:6px;position:relative;transition:box-shadow .15s" onmouseenter="this.querySelector('.sched-edit-btn').style.opacity=1" onmouseleave="this.querySelector('.sched-edit-btn').style.opacity=0">
+        return`<div onclick="startEditSched('${s.id}')" style="background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)" onmouseenter="this.style.borderColor='#d4d0ca';this.style.boxShadow='0 2px 6px rgba(0,0,0,0.08)'" onmouseleave="this.style.borderColor='#e8e4de';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.04)'">
           <div style="display:flex;align-items:center;gap:7px">
             <span style="width:3px;height:14px;border-radius:2px;background:${slotColor};display:inline-block;flex-shrink:0"></span>
             ${s.recType==='매월'?`<span style="font-size:8px;background:#10b98118;color:#10b981;border:1px solid #10b98144;border-radius:3px;padding:0 4px;font-weight:700;flex-shrink:0">${s.monthDay}일</span>`:''}
             <span style="font-size:12px;font-weight:700;color:#1c1a17;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span>
-            <div class="sched-edit-btn" style="opacity:0;transition:opacity .15s;display:flex;gap:3px;flex-shrink:0">
-              <button onclick="event.stopPropagation();startEditSched('${s.id}')" style="background:none;border:1px solid #e8e4de;border-radius:4px;padding:2px 6px;font-size:9px;color:#9b9794;cursor:pointer">수정</button>
-              <button onclick="event.stopPropagation();doDelSched('${s.id}')" style="background:none;border:1px solid #fecaca;border-radius:4px;padding:2px 6px;font-size:9px;color:#ef4444;cursor:pointer">삭제</button>
-            </div>
           </div>
           ${s.desc?`<div style="font-size:10px;color:#6b6762;margin-top:3px;margin-left:10px;line-height:1.4">${esc(s.desc)}</div>`:''}
         </div>`;
@@ -1426,7 +1448,8 @@ function render(){
     <div class="main-pad" style="max-width:1160px;margin:0 auto">
       ${mainContent}
     </div>
-    ${rMemoModal()}`;
+    ${rMemoModal()}
+    ${rSchedEditModal()}`;
   _restoreInput();
 }
 
