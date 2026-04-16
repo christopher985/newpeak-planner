@@ -1221,7 +1221,7 @@ function tCancel(){
   document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
   _tId=null;_tActive=false;
 }
-function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},2400);}
+function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},err?5000:2400);}
 
 /* ══════════════════════════════════════
    캘린더
