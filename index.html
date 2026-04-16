@@ -452,11 +452,20 @@ async function addDesignReq(){
   }catch(e){toast('등록 실패: '+e.message,true);}
 }
 async function updateDesignStatus(id,status){
+  S._dStatusOpen=null;
   const r=S.designReqs?.find(x=>x.id===id);
   if(!r)return;
   const prev=r.status;r.status=status;render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'상태':{status:{name:status}}}});}
   catch(e){r.status=prev;toast('상태 변경 실패',true);render();}
+}
+function toggleDStatusDrop(e,id){
+  e.stopPropagation();
+  S._dStatusOpen=S._dStatusOpen===id?null:id;
+  render();
+  if(S._dStatusOpen){
+    setTimeout(()=>{const h=()=>{S._dStatusOpen=null;render();document.removeEventListener('click',h);};document.addEventListener('click',h,{once:true});},0);
+  }
 }
 async function openDesignDetail(id){
   const r=S.designReqs?.find(x=>x.id===id);
@@ -1513,9 +1522,14 @@ function rDesignCard(r){
         </div>
       </div>
       ${dlLabel?`<span style="font-size:9px;font-weight:600;color:${dlColor};white-space:nowrap;flex-shrink:0">${dlLabel}</span>`:''}
-      <select onclick="event.stopPropagation()" onchange="updateDesignStatus('${r.id}',this.value)" style="font-size:10px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;color:${sc};font-weight:700;cursor:pointer;outline:none">
-        ${D_STATUS.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}
-      </select>
+      <div style="position:relative;flex-shrink:0">
+        <button onclick="toggleDStatusDrop(event,'${r.id}')" style="font-size:10px;background:${sc}14;border:1px solid ${sc}44;border-radius:5px;padding:3px 8px;color:${sc};font-weight:700;cursor:pointer;outline:none;white-space:nowrap">${r.status} ▾</button>
+        ${S._dStatusOpen===r.id?`<div onclick="event.stopPropagation()" style="position:absolute;right:0;top:100%;margin-top:4px;background:#fff;border:1px solid #e8e4de;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:100;overflow:hidden;min-width:90px">
+          ${D_STATUS.map(s=>{const c=D_STATUS_COLOR[s];const sel=r.status===s;return`<div onclick="event.stopPropagation();updateDesignStatus('${r.id}','${s}')"
+            style="font-size:10px;font-weight:700;padding:7px 12px;cursor:pointer;color:${c};background:${sel?c+'14':'#fff'};border-left:3px solid ${sel?c:'transparent'};transition:background .1s"
+            onmouseenter="this.style.background='${c}14'" onmouseleave="this.style.background='${sel?c+'14':'#fff'}'">${s}</div>`;}).join('')}
+        </div>`:''}
+      </div>
     </div>
   </div>`;
 }
