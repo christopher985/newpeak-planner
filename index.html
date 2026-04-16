@@ -428,11 +428,10 @@ async function loadTasksByDate(ds,user){
 
   try{
     const weekday=dateToKrWeekday(ds);
-    if(!weekday){S.tasks[k]=[];S.tL=false;render();return;}
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
       filter:{and:[{property:'날짜',date:{equals:ds}},{property:'담당자',select:{equals:user}}]},
     });
-    if(res.results.length===0){
+    if(res.results.length===0&&weekday){
       const res2=await notion('POST',`/databases/${TASKS_DB}/query`,{
         filter:{and:[
           {property:'요일',select:{equals:weekday}},
@@ -1624,11 +1623,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
     </div>
     <!-- 브랜드 + 입력 -->
-    ${isWeekend?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:22px 16px;text-align:center">
-      <div style="font-size:20px;margin-bottom:6px">🌿</div>
-      <div style="font-size:12px;color:#9b9794">주말입니다!</div>
-    </div>`:
-    `<div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
       <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">브랜드</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
         ${BRANDS.map(b=>{const c=BRAND_COLOR[b]||'#9b9794';const isTr=c==='transparent';const a=S.addBrand===b;return`<button onclick="setBrand('${esc(b)}');render()"
@@ -1655,7 +1650,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
           onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
         <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
       </form>
-    </div>`}
+    </div>
     <!-- 고정업무 -->
     <div>
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
@@ -1740,20 +1735,16 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
         </div>
         ${dn.length?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">완료 ${dn.length}건 삭제</button>`:''}
       </div>
-      ${isWeekend?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
-        <div style="font-size:20px;margin-bottom:8px">🌿</div>
-        <div style="font-size:13px;color:#9b9794">주말입니다. 푹 쉬세요!</div>
-      </div>`:
-      `<form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:8px">
+      <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:8px">
         <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…" enterkeyhint="send"
           style="flex:1;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;
           padding:10px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)"
           onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
         <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
-      </form>`}
+      </form>
       <div>
         ${S.tL&&!all.length?`<div class="sk" style="height:56px;margin-bottom:8px"></div><div class="sk" style="height:56px;margin-bottom:8px;opacity:.6"></div><div class="sk" style="height:56px;opacity:.35"></div>`:''}
-        ${!S.tL&&!all.length&&!isWeekend?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
+        ${!S.tL&&!all.length?`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:28px 20px;text-align:center">
           <div style="font-size:24px;margin-bottom:8px">📋</div>
           <div style="font-size:13px;color:#9b9794">이 날 등록된 업무가 없어요.</div>
         </div>`:''}
