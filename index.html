@@ -74,12 +74,12 @@ const API_BASE  = '/.netlify/functions/proxy';
 
 const TEAMS = ['운영','퍼포먼스','콘텐츠','생산기획','디자인','정산'];
 const TEAM_MEMBERS = {
-  '운영':['마틴'],
-  '퍼포먼스':['크리스토퍼','켈리','에디'],
-  '콘텐츠':['지미','테오','코비','제니'],
-  '생산기획':['카일','크리스'],
-  '디자인':['조이'],
-  '정산':['조셉']
+  '운영':['Martin'],
+  '퍼포먼스':['Christopher','Kelly','Eddie'],
+  '콘텐츠':['Jimmy','Theo','Coby','Jenny'],
+  '생산기획':['Kyle','Chris'],
+  '디자인':['Joy'],
+  '정산':['Joseph']
 };
 const TEAM_COLOR = {
   '운영':'#10b981','퍼포먼스':'#e05c1a','콘텐츠':'#ec4899',
@@ -106,15 +106,15 @@ const CARD_COLORS = [
 ];
 const CARD_COLOR_MAP = Object.fromEntries(CARD_COLORS.map(c=>[c.name,c]));
 const UC = {
-  '크리스토퍼':'#e05c1a','켈리':'#ec4899','에디':'#3b82f6',
-  '마틴':'#10b981',
-  '지미':'#f59e0b','테오':'#a855f7','코비':'#ef4444','제니':'#ec4899',
-  '카일':'#3b82f6','크리스':'#e05c1a',
-  '조이':'#8b5cf6',
-  '조셉':'#f59e0b'
+  'Christopher':'#e05c1a','Kelly':'#ec4899','Eddie':'#3b82f6',
+  'Martin':'#10b981',
+  'Jimmy':'#f59e0b','Theo':'#a855f7','Coby':'#ef4444','Jenny':'#ec4899',
+  'Kyle':'#3b82f6','Chris':'#e05c1a',
+  'Joy':'#8b5cf6',
+  'Joseph':'#f59e0b'
 };
-const EN={'크리스토퍼':'Christopher','켈리':'Kelly','에디':'Eddie','마틴':'Martin','지미':'Jimmy','테오':'Theo','코비':'Coby','제니':'Jenny','카일':'Kyle','크리스':'Chris','조이':'Joy','조셉':'Joseph'};
-function en(name){return EN[name]||name;}
+const KR={'Christopher':'크리스토퍼','Kelly':'켈리','Eddie':'에디','Martin':'마틴','Jimmy':'지미','Theo':'테오','Coby':'코비','Jenny':'제니','Kyle':'카일','Chris':'크리스','Joy':'조이','Joseph':'조셉'};
+function kr(name){return KR[name]||name;}
 const DAY_NAMES = ['일','월','화','수','목','금','토'];
 const WEEKDAY_KR = ['월','화','수','목','금'];
 const SLOT_ORDER = ['오전','오후'];
@@ -285,7 +285,7 @@ const _savedTeam = localStorage.getItem(TEAM_KEY)||'퍼포먼스';
 let S = {
   token: localStorage.getItem(TOKEN_KEY)||'',
   team: _savedTeam,
-  user: (TEAM_MEMBERS[_savedTeam]||['크리스토퍼'])[0],
+  user: (TEAM_MEMBERS[_savedTeam]||['Christopher'])[0],
   addBrand: '기타',
   addArea: null,
   addColor: null,
@@ -349,17 +349,18 @@ async function loadTasksByDate(ds,user){
   const k=`${ds}-${user}`;
   if(S.tasks[k]!==undefined)return;
   S.tL=true;render();
+  const nu=kr(user);
   try{
     const weekday=dateToKrWeekday(ds);
     if(!weekday){S.tasks[k]=[];S.tL=false;render();return;}
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
-      filter:{and:[{property:'날짜',date:{equals:ds}},{property:'담당자',select:{equals:user}}]},
+      filter:{and:[{property:'날짜',date:{equals:ds}},{property:'담당자',select:{equals:nu}}]},
     });
     if(res.results.length===0){
       const res2=await notion('POST',`/databases/${TASKS_DB}/query`,{
         filter:{and:[
           {property:'요일',select:{equals:weekday}},
-          {property:'담당자',select:{equals:user}},
+          {property:'담당자',select:{equals:nu}},
           {property:'날짜',date:{is_empty:true}},
         ]},
       });
@@ -373,13 +374,14 @@ async function loadTasksByDate(ds,user){
 async function loadCarried(user){
   const k='carried-'+user;
   if(S.tasks[k]!==undefined)return;
+  const nu=kr(user);
   try{
     const today=todayStr();
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
       filter:{and:[
         {property:'완료',checkbox:{equals:false}},
         {property:'날짜',date:{before:today}},
-        {property:'담당자',select:{equals:user}},
+        {property:'담당자',select:{equals:nu}},
       ]},
       sorts:[{property:'날짜',direction:'ascending'}],
     });
@@ -407,11 +409,12 @@ async function loadSched(user){
   const k=user;
   if(S.sched[k]!==undefined)return;
   S.sL=true;render();
+  const nu=kr(user);
   try{
     const res=await notion('POST',`/databases/${SCHED_DB}/query`,{
       filter:{and:[
         {property:'활성',checkbox:{equals:true}},
-        {or:[{property:'담당자',select:{equals:user}},{property:'담당자',select:{equals:'공통'}}]},
+        {or:[{property:'담당자',select:{equals:nu}},{property:'담당자',select:{equals:'공통'}}]},
       ]},
     });
     S.sched[k]=res.results
@@ -676,7 +679,7 @@ async function doAdd(text){
   try{
     const props={
       '업무명':{title:[{text:{content:text}}]},
-      '담당자':{select:{name:S.user}},
+      '담당자':{select:{name:kr(S.user)}},
       '완료':{checkbox:false},
       '날짜':{date:{start:S.selectedDate}},
     };
@@ -946,7 +949,7 @@ async function saveAddSched(){
   try{
     const props={
       '업무명':{title:[{text:{content:a.label.trim()}}]},
-      '담당자':{select:{name:S.user}},
+      '담당자':{select:{name:kr(S.user)}},
       '활성':{checkbox:true},
       '시간대':{select:{name:a.slot}},
       '반복유형':{select:{name:a.recType}},
@@ -1107,7 +1110,7 @@ function rCalendar(){
   // 디자인/콘텐츠 탭: 데드라인별 요청 수 집계
   const dlCount={};
   if(isDesign&&S.designReqs){S.designReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
-  if(isContent&&S.contentReqs){const cn=EN[S.user]||S.user;S.contentReqs.filter(r=>r.people.includes(cn)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
+  if(isContent&&S.contentReqs){S.contentReqs.filter(r=>r.people.includes(S.user)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
   const dlMax=Math.max(1,...Object.values(dlCount));
 
   const cellHtml=cells.map(({d,ds,otherMonth})=>{
@@ -1197,7 +1200,7 @@ function rHeader(){
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
         ${members.map(u=>{const a=S.user===u,c=UC[u]||tc;return`<button onclick="selUser('${esc(u)}')"
           style="background:${a?c:'#f5f3ef'};border:1.5px solid ${a?c:'#e8e4de'};border-radius:6px;
-          padding:5px 13px;font-size:11px;font-weight:700;color:${a?'#fff':c};cursor:pointer;transition:all .15s">${esc(en(u))}</button>`;}).join('')}
+          padding:5px 13px;font-size:11px;font-weight:700;color:${a?'#fff':c};cursor:pointer;transition:all .15s">${esc(u)}</button>`;}).join('')}
         <span style="width:1px;height:18px;background:#e8e4de;margin:0 2px"></span>
         <button onclick="refresh()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">↺</button>
         <button onclick="resetToken()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">⚙</button>
@@ -1371,7 +1374,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <span style="width:3px;height:16px;border-radius:2px;background:${ac};display:inline-block;flex-shrink:0"></span>
       <div>
         <div style="font-size:13px;font-weight:800;color:#1c1a17">${dateTitle}</div>
-        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(en(S.user))}</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(S.user)}</div>
       </div>
     </div>
     <!-- 브랜드 + 입력 -->
@@ -1485,7 +1488,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           <span style="width:3px;height:18px;border-radius:2px;display:inline-block;background:${ac}"></span>
           <div>
             <span style="font-size:14px;font-weight:800;color:#1c1a17">${fmtDateKr(S.selectedDate)}</span>
-            <span style="font-size:11px;color:#9b9794;margin-left:8px">${esc(en(S.user))}</span>
+            <span style="font-size:11px;color:#9b9794;margin-left:8px">${esc(S.user)}</span>
           </div>
           ${inc.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:10px;padding:2px 8px;font-weight:700">${inc.length}건 진행 중</span>`:''}
         </div>
@@ -1734,7 +1737,7 @@ function rDesignDetailModal(){
 function rContentLayout(){
   const tc=TEAM_COLOR[S.team]||'#ec4899';
   const allReqs=S.contentReqs||[];
-  const notionName=EN[S.user]||S.user;
+  const notionName=S.user;
   const reqs=allReqs.filter(r=>r.people.includes(notionName));
   const inc=reqs.filter(r=>r.status!=='완료');
   const dn=reqs.filter(r=>r.status==='완료');
@@ -1748,7 +1751,7 @@ function rContentLayout(){
       <span style="width:3px;height:16px;border-radius:2px;background:${tc};display:inline-block;flex-shrink:0"></span>
       <div>
         <div style="font-size:13px;font-weight:800;color:#1c1a17">${dateTitle}</div>
-        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(en(S.user))}</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(S.user)}</div>
       </div>
     </div>
     <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
