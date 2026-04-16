@@ -2162,8 +2162,7 @@ function render(){
     if(carryItems.length)inc=[...carryItems,...inc];
   }
   const uc=UC[S.user]||TEAM_COLOR[S.team]||'#e05c1a';
-  const dc=['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
-  const ac=widx!==null?dc[widx]:'#9b9794';
+  const ac=TEAM_COLOR[S.team]||'#e05c1a';
   const isPerfTeam=S.team==='퍼포먼스';
   const isDesignTeam=S.team==='디자인';
   const isContentTeam=S.team==='콘텐츠';
