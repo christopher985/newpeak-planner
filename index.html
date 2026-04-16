@@ -140,6 +140,7 @@ const D_PRIORITY_COLOR={'긴급':'#ef4444','보통':'#f59e0b','낮음':'#22c55e'
 /* ── 콘텐츠탭 상수 ── */
 const C_STATUS=['시작 전','진행 중','완료'];
 const C_STATUS_COLOR={'시작 전':'#6b7280','진행 중':'#ec4899','완료':'#22c55e'};
+const C_NAME_MAP={'지미':'Jimmy','테오':'Theo','코비':'Coby','제니':'Jenny'};
 
 /* ── YouTube 캘린더 연동 (Google Calendar API OAuth) ── */
 const GCAL_CLIENT_ID='676763456182-fb87paibmcuuo5m8rap81k0ho9p3g43v.apps.googleusercontent.com';
@@ -1104,7 +1105,7 @@ function rCalendar(){
   // 디자인/콘텐츠 탭: 데드라인별 요청 수 집계
   const dlCount={};
   if(isDesign&&S.designReqs){S.designReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
-  if(isContent&&S.contentReqs){S.contentReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
+  if(isContent&&S.contentReqs){const cn=C_NAME_MAP[S.user]||S.user;S.contentReqs.filter(r=>r.people.includes(cn)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
   const dlMax=Math.max(1,...Object.values(dlCount));
 
   const cellHtml=cells.map(({d,ds,otherMonth})=>{
@@ -1730,7 +1731,9 @@ function rDesignDetailModal(){
 ══════════════════════════════════════ */
 function rContentLayout(){
   const tc=TEAM_COLOR[S.team]||'#ec4899';
-  const reqs=S.contentReqs||[];
+  const allReqs=S.contentReqs||[];
+  const notionName=C_NAME_MAP[S.user]||S.user;
+  const reqs=allReqs.filter(r=>r.people.includes(notionName));
   const inc=reqs.filter(r=>r.status!=='완료');
   const dn=reqs.filter(r=>r.status==='완료');
   const skeletons=`<div class="sk" style="height:52px;margin-bottom:7px"></div><div class="sk" style="height:52px;margin-bottom:7px;opacity:.7"></div><div class="sk" style="height:52px;opacity:.4"></div>`;
@@ -1743,7 +1746,7 @@ function rContentLayout(){
       <span style="width:3px;height:16px;border-radius:2px;background:${tc};display:inline-block;flex-shrink:0"></span>
       <div>
         <div style="font-size:13px;font-weight:800;color:#1c1a17">${dateTitle}</div>
-        <div style="font-size:11px;color:#9b9794;margin-top:1px">콘텐츠 팀</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(S.user)}</div>
       </div>
     </div>
     <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
@@ -2035,7 +2038,9 @@ function selTeam(t){
   else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스')loadCarried(S.user);}
 }
 function selUser(u){
-  S.user=u;S.tasks={};render();
+  S.user=u;
+  if(S.team==='콘텐츠'){render();return;}
+  S.tasks={};render();
   loadTasksByDate(S.selectedDate,u);
   setTimeout(()=>loadSched(u),400);
   if(S.team==='퍼포먼스')loadCarried(u);
