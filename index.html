@@ -387,6 +387,27 @@ async function loadCarried(user){
   }catch(e){S.tasks[k]=[];}
   render();
 }
+async function loadMonthlyDone(user){
+  const y=S.calYear,m=S.calMonth;
+  const k=`done-${y}-${m}-${user}`;
+  if(S.tasks[k]!==undefined)return;
+  try{
+    const tMin=`${y}-${String(m+1).padStart(2,'0')}-01`;
+    const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+    const tMax=`${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+    const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
+      filter:{and:[
+        {property:'완료',checkbox:{equals:true}},
+        {property:'날짜',date:{on_or_after:tMin}},
+        {property:'날짜',date:{on_or_before:tMax}},
+        {property:'담당자',select:{equals:user}},
+      ]},
+      sorts:[{property:'날짜',direction:'descending'}],
+    });
+    S.tasks[k]=res.results.map(mapTask);
+  }catch(e){S.tasks[k]=[];}
+  render();
+}
 function mapTask(p){
   return{
     id:p.id,
@@ -705,8 +726,9 @@ async function doToggle(id){
     (S.tasks[todayK]=S.tasks[todayK]||[]).push(moved);
     if(S.dropZone[todayK])S.dropZone[todayK]=S.dropZone[todayK].filter(x=>x!==id);
     render();
-    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}}}});}
-    catch(e){
+    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}}}});
+      delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);
+    }catch(e){
       S.tasks[todayK]=(S.tasks[todayK]||[]).filter(x=>x.id!==id);
       (S.tasks[k]=S.tasks[k]||[]).push(t);
       toast('업데이트 실패',true);render();
@@ -716,8 +738,9 @@ async function doToggle(id){
   t.completed=nv;
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
-  try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});}
-  catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
+  try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});
+    if(S.team==='퍼포먼스'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
+  }catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
   const{t:found,k}=findTask(id);
@@ -1738,7 +1761,8 @@ function rContentLayout(){
   const notionName=S.user;
   const reqs=allReqs.filter(r=>r.people.includes(notionName));
   const inc=reqs.filter(r=>r.status!=='완료');
-  const dn=reqs.filter(r=>r.status==='완료');
+  const calMonthStr=`${S.calYear}-${String(S.calMonth+1).padStart(2,'0')}`;
+  const dn=reqs.filter(r=>r.status==='완료'&&r.deadline&&r.deadline.startsWith(calMonthStr));
   const skeletons=`<div class="sk" style="height:52px;margin-bottom:7px"></div><div class="sk" style="height:52px;margin-bottom:7px;opacity:.7"></div><div class="sk" style="height:52px;opacity:.4"></div>`;
   const detailModal=S.contentDetail?rContentDetailModal():'';
 
@@ -1985,7 +2009,8 @@ function render(){
     return curWeekday?s.weekday===curWeekday:false;
   });
   let inc=tasks.filter(t=>!t.completed);
-  const dn=tasks.filter(t=>t.completed);
+  const monthlyDoneKey=`done-${S.calYear}-${S.calMonth}-${S.user}`;
+  const dn=S.team==='퍼포먼스'?(S.tasks[monthlyDoneKey]||[]):tasks.filter(t=>t.completed);
   // 오늘 이후 날짜: 과거 미완료 이월
   if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
     const carried=S.tasks['carried-'+S.user]||[];
@@ -2038,7 +2063,7 @@ function selTeam(t){
   render();
   if(t==='디자인'){loadDesignReqs();}
   else if(t==='콘텐츠'){loadContentReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스')loadCarried(S.user);}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스'){loadCarried(S.user);loadMonthlyDone(S.user);}}
 }
 function selUser(u){
   S.user=u;
@@ -2046,7 +2071,7 @@ function selUser(u){
   S.tasks={};render();
   loadTasksByDate(S.selectedDate,u);
   setTimeout(()=>loadSched(u),400);
-  if(S.team==='퍼포먼스')loadCarried(u);
+  if(S.team==='퍼포먼스'){loadCarried(u);loadMonthlyDone(u);}
 }
 function selectDate(ds){
   S.selectedDate=ds;
@@ -2060,6 +2085,7 @@ function moveMonth(dir){
   if(S.calMonth>11){S.calMonth=0;S.calYear++;}
   if(S.calMonth<0){S.calMonth=11;S.calYear--;}
   render();loadYtEvents();
+  if(S.team==='퍼포먼스')loadMonthlyDone(S.user);
 }
 function goToday(){
   const n=getKSTNow();
