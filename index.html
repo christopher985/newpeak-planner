@@ -427,7 +427,7 @@ async function loadDesignReqs(){
       priority:p.properties['중요도']?.status?.name||'보통',
       deadline:p.properties['Dead Line']?.date?.start||null,
       edited:p.properties['최종 편집 일시']?.last_edited_time||null,
-      requester:p.created_by?.name||null,
+      requester:p.properties['요청자']?.select?.name||p.properties['요청자']?.people?.[0]?.name||p.created_by?.name||null,
     }));
   }catch(e){S.designReqs=[];toast('디자인 요청 로드 실패: '+e.message,true);}
   S.dL=false;render();
