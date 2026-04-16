@@ -2001,7 +2001,9 @@ function rDesignLayout(){
     </div>
     ${addForm}
     ${S.dL&&!reqs.length?skeletons:D_STATUS.map(st=>{
-      const items=reqs.filter(r=>r.status===st);
+      const calMonthStr=`${S.calYear}-${String(S.calMonth+1).padStart(2,'0')}`;
+      let items=reqs.filter(r=>r.status===st);
+      if(st==='완료')items=items.filter(r=>r.edited&&r.edited.slice(0,7)===calMonthStr);
       if(!items.length)return'';
       const sc=D_STATUS_COLOR[st];
       return`<div style="margin-bottom:4px">
