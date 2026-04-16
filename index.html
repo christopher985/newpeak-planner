@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>뉴픽 Todo</title>
+<link rel="icon" type="image/png" href="logo.png"/>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -1511,6 +1512,8 @@ function rTeamBar(){
   const members=TEAM_MEMBERS[S.team]||[];
   return`<div class="hpad" style="background:#1c1a17;padding-top:10px;padding-bottom:10px;border-bottom:1px solid #2c2a27">
     <div style="max-width:1160px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <img src="logo.png" alt="NEWPEAK" style="height:26px;object-fit:contain;flex-shrink:0"/>
+      <span style="width:1px;height:16px;background:#2c2a27;flex-shrink:0"></span>
       <span style="font-size:9px;font-weight:800;letter-spacing:2px;color:#6b6762;text-transform:uppercase">TEAM</span>
       <div style="position:relative">
         <select class="team-sel" onchange="selTeam(this.value)">
@@ -1532,8 +1535,7 @@ function rHeader(){
   return`<div class="hpad" style="background:#fff;border-bottom:1px solid #e8e4de;padding-top:14px;padding-bottom:12px">
     <div style="max-width:1160px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:2px;color:${tc};text-transform:uppercase;margin-bottom:3px">뉴픽 · WEEKLY TODO</div>
-        <h1 style="font-size:18px;font-weight:800;letter-spacing:-.5px;color:#1c1a17">Todo Board</h1>
+        <h1 style="font-size:16px;font-weight:800;letter-spacing:-.3px;color:#1c1a17;margin:0">Todo Board</h1>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
         ${members.map(u=>{const a=S.user===u,c=UC[u]||tc;return`<button onclick="selUser('${esc(u)}')"
