@@ -310,6 +310,7 @@ function crmByDate(){
 function setCalMode(mode){S.calMode=mode;render();if(mode==='crm')loadCrmEvents();}
 function openCrmModal(ds){
   const items=S.crmEvents.filter(ev=>ev.date===ds);
+  if(items.length===1){openCrmDetail(items[0].id);return;}
   S.crmModal={date:ds,items,addTitle:'',editId:null,editTitle:''};
   render();
 }
@@ -381,7 +382,16 @@ async function openCrmDetail(id){
   }catch(e){S.crmDetail.blocks=[];}
   S.crmDetail.blocksLoading=false;render();
 }
-function closeCrmDetail(){S.crmDetail=null;render();}
+function closeCrmDetail(){
+  const d=S.crmDetail;
+  S.crmDetail=null;
+  // 목록 모달이 없으면 날짜 목록으로 복귀
+  if(!S.crmModal&&d){
+    const items=S.crmEvents.filter(ev=>ev.date===d.date);
+    if(items.length>1){S.crmModal={date:d.date,items,addTitle:'',editId:null,editTitle:''};}
+  }
+  render();
+}
 function setCrmDetailField(f,v){if(S.crmDetail)S.crmDetail[f]=v;}
 async function saveCrmDetail(){
   const d=S.crmDetail;if(!d)return;
