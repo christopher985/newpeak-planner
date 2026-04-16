@@ -378,9 +378,9 @@ async function openCrmDetail(id){
         }
       }
     }
-    S.crmDetail.blocks=blocks;
-  }catch(e){S.crmDetail.blocks=[];}
-  S.crmDetail.blocksLoading=false;render();
+    if(S.crmDetail)S.crmDetail.blocks=blocks;
+  }catch(e){if(S.crmDetail)S.crmDetail.blocks=[];}
+  if(S.crmDetail){S.crmDetail.blocksLoading=false;render();}
 }
 function closeCrmDetail(){
   const d=S.crmDetail;
