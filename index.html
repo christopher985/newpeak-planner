@@ -113,9 +113,6 @@ const UC = {
   'Joy':'#8b5cf6',
   'Joseph':'#f59e0b'
 };
-// TASKS_DB·SCHED_DB 담당자 select가 한국어이므로 API 통신 시 변환
-const KR={'Christopher':'크리스토퍼','Kelly':'켈리','Eddie':'에디','Martin':'마틴','Jimmy':'지미','Theo':'테오','Coby':'코비','Jenny':'제니','Kyle':'카일','Chris':'크리스','Joy':'조이','Joseph':'조셉'};
-function kr(name){return KR[name]||name;}
 const DAY_NAMES = ['일','월','화','수','목','금','토'];
 const WEEKDAY_KR = ['월','화','수','목','금'];
 const SLOT_ORDER = ['오전','오후'];
@@ -355,13 +352,13 @@ async function loadTasksByDate(ds,user){
     const weekday=dateToKrWeekday(ds);
     if(!weekday){S.tasks[k]=[];S.tL=false;render();return;}
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
-      filter:{and:[{property:'날짜',date:{equals:ds}},{property:'담당자',select:{equals:kr(user)}}]},
+      filter:{and:[{property:'날짜',date:{equals:ds}},{property:'담당자',select:{equals:user}}]},
     });
     if(res.results.length===0){
       const res2=await notion('POST',`/databases/${TASKS_DB}/query`,{
         filter:{and:[
           {property:'요일',select:{equals:weekday}},
-          {property:'담당자',select:{equals:kr(user)}},
+          {property:'담당자',select:{equals:user}},
           {property:'날짜',date:{is_empty:true}},
         ]},
       });
@@ -382,7 +379,7 @@ async function loadCarried(user){
       filter:{and:[
         {property:'완료',checkbox:{equals:false}},
         {property:'날짜',date:{before:today}},
-        {property:'담당자',select:{equals:kr(user)}},
+        {property:'담당자',select:{equals:user}},
       ]},
       sorts:[{property:'날짜',direction:'ascending'}],
     });
@@ -403,7 +400,7 @@ async function loadMonthlyDone(user){
         {property:'완료',checkbox:{equals:true}},
         {property:'날짜',date:{on_or_after:tMin}},
         {property:'날짜',date:{on_or_before:tMax}},
-        {property:'담당자',select:{equals:kr(user)}},
+        {property:'담당자',select:{equals:user}},
       ]},
       sorts:[{property:'날짜',direction:'descending'}],
     });
@@ -436,7 +433,7 @@ async function loadSched(user){
     const res=await notion('POST',`/databases/${SCHED_DB}/query`,{
       filter:{and:[
         {property:'활성',checkbox:{equals:true}},
-        {or:[{property:'담당자',select:{equals:kr(user)}},{property:'담당자',select:{equals:'공통'}}]},
+        {or:[{property:'담당자',select:{equals:user}},{property:'담당자',select:{equals:'공통'}}]},
       ]},
     });
     S.sched[k]=res.results
@@ -701,7 +698,7 @@ async function doAdd(text){
   try{
     const props={
       '업무명':{title:[{text:{content:text}}]},
-      '담당자':{select:{name:kr(S.user)}},
+      '담당자':{select:{name:S.user}},
       '완료':{checkbox:false},
       '날짜':{date:{start:S.selectedDate}},
     };
@@ -973,7 +970,7 @@ async function saveAddSched(){
   try{
     const props={
       '업무명':{title:[{text:{content:a.label.trim()}}]},
-      '담당자':{select:{name:kr(S.user)}},
+      '담당자':{select:{name:S.user}},
       '활성':{checkbox:true},
       '시간대':{select:{name:a.slot}},
       '반복유형':{select:{name:a.recType}},
