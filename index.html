@@ -471,6 +471,37 @@ async function openDesignDetail(id){
   S.designDetail.contentLoading=false;render();
 }
 function closeDesignDetail(){S.designDetail=null;render();}
+function toggleDesignEdit(){
+  if(!S.designDetail)return;
+  if(S.designDetail.editing){S.designDetail.editing=false;}
+  else{S.designDetail.editing=true;S.designDetail.editTitle=S.designDetail.title;S.designDetail.editBrand=S.designDetail.brand||'';S.designDetail.editPriority=S.designDetail.priority||'보통';S.designDetail.editDeadline=S.designDetail.deadline||'';}
+  render();
+}
+function setDesignEdit(field,val){if(S.designDetail)S.designDetail[field]=val;}
+function toggleDesignEditBrand(val){if(S.designDetail){S.designDetail.editBrand=S.designDetail.editBrand===val?'':val;render();}}
+async function saveDesignEdit(){
+  const d=S.designDetail;if(!d||!d.editing)return;
+  if(!d.editTitle.trim()){toast('제목을 입력해주세요',true);return;}
+  const prev={title:d.title,brand:d.brand,priority:d.priority,deadline:d.deadline};
+  d.title=d.editTitle.trim();d.brand=d.editBrand||null;d.priority=d.editPriority;d.deadline=d.editDeadline||null;
+  d.editing=false;render();
+  try{
+    const props={'제목':{title:[{text:{content:d.title}}]}};
+    if(d.brand)props['브랜드']={select:{name:d.brand}};else props['브랜드']={select:null};
+    if(d.deadline)props['Dead Line']={date:{start:d.deadline}};else props['Dead Line']={date:null};
+    await notion('PATCH',`/pages/${d.id}`,{properties:props});
+    const patches={};
+    patches['중요도']={status:{name:d.priority}};
+    await notion('PATCH',`/pages/${d.id}`,{properties:patches});
+    const r=S.designReqs?.find(x=>x.id===d.id);
+    if(r){r.title=d.title;r.brand=d.brand;r.priority=d.priority;r.deadline=d.deadline;}
+    toast('수정 저장됨');render();
+  }catch(e){
+    d.title=prev.title;d.brand=prev.brand;d.priority=prev.priority;d.deadline=prev.deadline;
+    const r=S.designReqs?.find(x=>x.id===d.id);if(r)Object.assign(r,prev);
+    toast('저장 실패: '+e.message,true);render();
+  }
+}
 async function deleteDesignReq(id){
   if(!confirm('이 디자인 요청을 삭제할까요?'))return;
   const prev=S.designReqs;
@@ -1487,22 +1518,59 @@ function rDesignDetailModal(){
       ?d.content.map(b=>renderBlock(b)).join('')
       :`<div style="text-align:center;padding:16px;color:#9b9794;font-size:12px">본문 내용 없음</div>`;
 
+  const isEdit=d.editing;
+  const headerHtml=isEdit
+    ?`<input value="${esc(d.editTitle)}" oninput="setDesignEdit('editTitle',this.value)"
+        style="width:100%;font-size:15px;font-weight:700;color:#1c1a17;line-height:1.4;background:transparent;border:none;border-bottom:1.5px solid #3b82f6;outline:none;padding:0 0 2px"/>`
+    :`<div style="font-size:15px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(d.title)}</div>`;
+
+  const tagsHtml=isEdit
+    ?`<div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">브랜드</div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px">
+            ${D_BRANDS.map(b=>{const c=D_BRAND_COLOR[b]||'#9b9794';const sel=d.editBrand===b;return`<button onclick="toggleDesignEditBrand('${esc(b)}')"
+              style="font-size:8px;font-weight:700;padding:3px 7px;border-radius:4px;cursor:pointer;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${esc(b)}</button>`;}).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">중요도</div>
+          <div style="display:flex;gap:3px">
+            ${['긴급','보통','낮음'].map(p=>{const c=D_PRIORITY_COLOR[p];const sel=d.editPriority===p;return`<button onclick="setDesignEdit('editPriority','${p}');render()"
+              style="font-size:8px;font-weight:700;padding:3px 7px;border-radius:4px;cursor:pointer;
+              background:${sel?c:'#f5f3ef'};border:1px solid ${sel?c:'#e8e4de'};color:${sel?'#fff':c}">${p}</button>`;}).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">데드라인</div>
+          <input type="date" value="${d.editDeadline||''}" onchange="setDesignEdit('editDeadline',this.value)"
+            style="font-size:11px;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;color:#1c1a17;outline:none"/>
+        </div>
+      </div>`
+    :`<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">
+        <span style="font-size:9px;background:${sc}18;color:${sc};border:1px solid ${sc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.status}</span>
+        <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.priority}</span>
+        ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:2px 7px;font-weight:700">${esc(d.brand)}</span>`:''}
+        ${d.deadline?`<span style="font-size:9px;background:#f5f3ef;color:#6b6762;border:1px solid #e8e4de;border-radius:4px;padding:2px 7px;font-weight:700">${d.deadline}</span>`:''}
+      </div>`;
+
+  const editBtnHtml=isEdit
+    ?`<button onclick="saveDesignEdit()" style="background:#3b82f6;border:none;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:#fff;flex-shrink:0;line-height:1" title="저장">✓</button>
+      <button onclick="toggleDesignEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1" title="취소">×</button>`
+    :`<button onclick="toggleDesignEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#9b9794;flex-shrink:0;line-height:1" title="수정">✎</button>
+      <button onclick="closeDesignDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>`;
+
   return`<div onclick="if(event.target===this)closeDesignDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;flex-shrink:0">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
           <div style="flex:1;min-width:0">
-            <div style="font-size:15px;font-weight:700;color:#1c1a17;line-height:1.4;word-break:break-word">${esc(d.title)}</div>
-            <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">
-              <span style="font-size:9px;background:${sc}18;color:${sc};border:1px solid ${sc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.status}</span>
-              <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:2px 7px;font-weight:700">${d.priority}</span>
-              ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:2px 7px;font-weight:700">${esc(d.brand)}</span>`:''}
-              ${d.deadline?`<span style="font-size:9px;background:#f5f3ef;color:#6b6762;border:1px solid #e8e4de;border-radius:4px;padding:2px 7px;font-weight:700">${d.deadline}</span>`:''}
-            </div>
+            ${headerHtml}
+            ${tagsHtml}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <a href="https://www.notion.so/${d.id.replace(/-/g,'')}" target="_blank" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#9b9794;text-decoration:none;line-height:1" title="Notion에서 수정">✎</a>
-            <button onclick="closeDesignDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
+            ${editBtnHtml}
           </div>
         </div>
       </div>
