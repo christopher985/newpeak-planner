@@ -1105,7 +1105,7 @@ function tRow(t,ac,dim){
 
   // 좌측 상단: 이월 + 우선순위 + 긴급
   const topLeft=!dim?[
-    t.carried&&t.dateStr?`<span style="font-size:9px;background:transparent;color:#b91c1c;border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid #fecaca">${t.dateStr.slice(5).replace('-','/')}</span>`:'',
+    t.carried&&t.dateStr?`<span style="font-size:9px;color:#b91c1c;font-weight:700">${t.dateStr.slice(5).replace('-','/')}</span>`:'',
     t.priority?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:'',
     us?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:'',
   ].filter(Boolean).join(''):'';
