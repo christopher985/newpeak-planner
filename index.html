@@ -296,6 +296,51 @@ function crmByDate(){
   return map;
 }
 function setCalMode(mode){S.calMode=mode;render();if(mode==='crm')loadCrmEvents();}
+function openCrmModal(ds){
+  const items=S.crmEvents.filter(ev=>ev.date===ds);
+  S.crmModal={date:ds,items,addTitle:'',editId:null,editTitle:''};
+  render();
+}
+function closeCrmModal(){S.crmModal=null;render();}
+function startCrmEdit(id,title){if(S.crmModal){S.crmModal.editId=id;S.crmModal.editTitle=title;render();}}
+function cancelCrmEdit(){if(S.crmModal){S.crmModal.editId=null;S.crmModal.editTitle='';render();}}
+async function saveCrmEdit(){
+  const m=S.crmModal;if(!m||!m.editId)return;
+  if(!m.editTitle.trim()){toast('제목을 입력해주세요',true);return;}
+  const prev=S.crmEvents.find(e=>e.id===m.editId);
+  const oldTitle=prev?.title;
+  if(prev)prev.title=m.editTitle.trim();
+  const item=m.items.find(e=>e.id===m.editId);if(item)item.title=m.editTitle.trim();
+  m.editId=null;m.editTitle='';render();
+  try{
+    await notion('PATCH','/pages/'+prev.id,{properties:{'이름':{title:[{text:{content:prev.title}}]}}});
+    toast('수정됨');
+  }catch(e){if(prev)prev.title=oldTitle;toast('수정 실패: '+e.message,true);render();}
+}
+async function addCrmEvent(){
+  const m=S.crmModal;if(!m||!m.addTitle.trim()){toast('제목을 입력해주세요',true);return;}
+  const title=m.addTitle.trim();
+  m.addTitle='';render();
+  try{
+    const res=await notion('POST','/pages',{parent:{database_id:CRM_DB},properties:{
+      '이름':{title:[{text:{content:title}}]},
+      '날짜':{date:{start:m.date}},
+    }});
+    const ev={id:res.id,title,date:m.date};
+    S.crmEvents.push(ev);
+    m.items.push(ev);
+    render();toast('CRM 일정 추가됨');
+  }catch(e){toast('추가 실패: '+e.message,true);}
+}
+async function deleteCrmEvent(id){
+  const m=S.crmModal;if(!m)return;
+  const prev=[...S.crmEvents];
+  S.crmEvents=S.crmEvents.filter(e=>e.id!==id);
+  m.items=m.items.filter(e=>e.id!==id);
+  render();
+  try{await notion('PATCH','/pages/'+id,{archived:true});toast('삭제됨');}
+  catch(e){S.crmEvents=prev;m.items=prev.filter(e=>e.date===m.date);toast('삭제 실패: '+e.message,true);render();}
+}
 
 /* ══════════════════════════════════════
    상태
@@ -328,6 +373,7 @@ let S = {
   incSort: 'time', manualOrder: {}, dropZone: {},
   calMode: 'promo', // 'promo' | 'crm'
   crmEvents: [],
+  crmModal: null, // {date, items, addTitle:''}
   designReqs: null, dL: false,
   designAdd: null, designDetail: null,
   contentReqs: null, cL: false,
@@ -953,6 +999,52 @@ function rMemoModal(){
     </div>
   </div>`;
 }
+function rCrmModal(){
+  const m=S.crmModal;if(!m)return'';
+  const ds=m.date;
+  const [,mm,dd]=ds.split('-');
+  const dow=['일','월','화','수','목','금','토'][new Date(ds+'T00:00:00Z').getUTCDay()];
+  const dateLabel=`${parseInt(mm)}월 ${parseInt(dd)}일 ${dow}요일`;
+  return`<div onclick="if(event.target===this)closeCrmModal()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:9px;font-weight:700;color:#ef4444;letter-spacing:1px;margin-bottom:2px">CRM 캘린더</div>
+            <div style="font-size:15px;font-weight:700;color:#1c1a17">${dateLabel}</div>
+          </div>
+          <button onclick="closeCrmModal()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
+        </div>
+      </div>
+      <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        ${m.items.length?m.items.map(ev=>{
+          if(m.editId===ev.id){
+            return`<div style="display:flex;gap:6px;align-items:center">
+              <input value="${esc(m.editTitle)}" oninput="S.crmModal.editTitle=this.value" onkeydown="if(event.key==='Enter')saveCrmEdit();if(event.key==='Escape')cancelCrmEdit()"
+                style="flex:1;background:#f9f8f6;border:1.5px solid #3b82f6;border-radius:6px;padding:7px 10px;font-size:12px;color:#1c1a17;outline:none"/>
+              <button onclick="saveCrmEdit()" style="background:#3b82f6;border:none;border-radius:6px;padding:6px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+              <button onclick="cancelCrmEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
+            </div>`;
+          }
+          return`<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 12px">
+            <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
+            <span onclick="startCrmEdit('${ev.id}','${esc(ev.title)}')" style="flex:1;font-size:13px;color:#1c1a17;cursor:pointer" title="클릭하여 수정">${esc(ev.title)}</span>
+            <button onclick="deleteCrmEvent('${ev.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;line-height:1;opacity:.6">×</button>
+          </div>`;
+        }).join(''):`<div style="text-align:center;padding:16px 0;color:#9b9794;font-size:12px">등록된 일정이 없습니다</div>`}
+      </div>
+      <div style="padding:12px 18px 16px;border-top:1px solid #e8e4de">
+        <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">새 일정 추가</div>
+        <form onsubmit="event.preventDefault();addCrmEvent()" style="display:flex;gap:7px">
+          <input value="${esc(m.addTitle)}" oninput="S.crmModal.addTitle=this.value" placeholder="브랜드 / 일정명 입력…"
+            style="flex:1;background:#f9f8f6;border:1.5px solid #e8e4de;border-radius:8px;padding:8px 12px;font-size:12px;color:#1c1a17;outline:none;transition:border-color .15s"
+            onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'"/>
+          <button type="submit" style="background:#ef4444;border:none;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer">추가</button>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
 function rSchedEditModal(){
   if(!S.editingSched)return'';
   const e=S.editingSched;
@@ -1290,7 +1382,8 @@ function rCalendar(){
       }).join(''):'';
       if(ytIcons)cellContent=`<div style="display:flex;gap:1px;justify-content:center;flex-wrap:wrap;margin-top:1px">${ytIcons}</div>`;
     }
-    return`<div class="${cls}" onclick="${isDesign?'':`selectDate('${ds}')`}" style="padding:4px 0;${bgStyle}">
+    const cellClick=isDesign?'':(isPerfCal&&S.calMode==='crm'?`openCrmModal('${ds}')`:`selectDate('${ds}')`);
+    return`<div class="${cls}" onclick="${cellClick}" style="padding:4px 0;${bgStyle}">
       <span style="${ns}">${d}</span>
       ${dots?`<div class="cal-dots">${dots}</div>`:''}
       ${cellContent}
@@ -2186,7 +2279,8 @@ function render(){
       ${mainContent}
     </div>
     ${rMemoModal()}
-    ${rSchedEditModal()}`;
+    ${rSchedEditModal()}
+    ${rCrmModal()}`;
   _restoreInput();
 }
 
