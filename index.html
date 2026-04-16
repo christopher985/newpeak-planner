@@ -1007,11 +1007,11 @@ function rCalendar(){
       const cnt=dlCount[ds]||0;
       if(cnt>0){
         const ratio=Math.min(cnt/dlMax,1);
-        const r=Math.round(34+(239-34)*ratio);
-        const g=Math.round(197+(68-197)*ratio);
-        const b2=Math.round(94+(46-94)*ratio);
+        const r=Math.round(59+(239-59)*ratio);
+        const g=Math.round(130+(68-130)*ratio);
+        const b2=Math.round(246+(46-246)*ratio);
         bgStyle=`background:rgba(${r},${g},${b2},${(0.12+ratio*0.28).toFixed(2)});`;
-        const txtColor=ratio>=0.7?'#b91c1c':ratio>=0.4?'#d97706':'#15803d';
+        const txtColor=ratio>=0.7?'#b91c1c':ratio>=0.4?'#d97706':'#2563eb';
         dots=`<span style="font-size:9px;font-weight:700;color:${txtColor};line-height:1">${cnt}</span>`;
       }
     }
