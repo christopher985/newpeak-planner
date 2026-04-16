@@ -1003,13 +1003,16 @@ function rCalendar(){
 
     let dots='';
     let bgStyle='';
-    if(isDesign){
+    if(isDesign&&!otherMonth){
       const cnt=dlCount[ds]||0;
-      if(cnt>0&&!otherMonth){
-        const intensity=Math.min(cnt/dlMax,1);
-        const alpha=Math.round(10+intensity*35);
-        bgStyle=`background:rgba(139,92,246,0.${String(alpha).padStart(2,'0')});`;
-        dots=`<span style="font-size:9px;font-weight:700;color:#7c3aed;line-height:1">${cnt}</span>`;
+      if(cnt>0){
+        const ratio=Math.min(cnt/dlMax,1);
+        const r=Math.round(34+(239-34)*ratio);
+        const g=Math.round(197+(68-197)*ratio);
+        const b2=Math.round(94+(46-94)*ratio);
+        bgStyle=`background:rgba(${r},${g},${b2},${(0.12+ratio*0.28).toFixed(2)});`;
+        const txtColor=ratio>=0.7?'#b91c1c':ratio>=0.4?'#d97706':'#15803d';
+        dots=`<span style="font-size:9px;font-weight:700;color:${txtColor};line-height:1">${cnt}</span>`;
       }
     }
     // YouTube 브랜드 + 판매채널 아이콘
@@ -1489,7 +1492,16 @@ function rDesignCard(r){
   const sc=D_STATUS_COLOR[r.status];
   const pc=D_PRIORITY_COLOR[r.priority]||'#9b9794';
   const bc=r.brand?D_BRAND_COLOR[r.brand]||'#9b9794':null;
-  const dl=r.deadline?r.deadline.slice(5).replace('-','/'):'';
+  let dlLabel='',dlColor='#9b9794',dlBg='#f5f3ef',dlBorder='#e8e4de';
+  if(r.deadline){
+    dlLabel=r.deadline.slice(5).replace('-','/');
+    const diff=Math.ceil((new Date(r.deadline+'T00:00:00+09:00')-new Date(Date.now()+9*36e5))/(864e5));
+    if(r.status==='완료'){dlColor='#6b7280';dlBg='#f3f4f6';dlBorder='#e5e7eb';}
+    else if(diff<0){dlLabel+=' 지남';dlColor='#b91c1c';dlBg='#fef2f2';dlBorder='#fecaca';}
+    else if(diff<=2){dlColor='#dc2626';dlBg='#fef2f2';dlBorder='#fecaca';}
+    else if(diff<=5){dlColor='#d97706';dlBg='#fffbeb';dlBorder='#fde68a';}
+    else{dlColor='#15803d';dlBg='#f0fdf4';dlBorder='#bbf7d0';}
+  }
   return`<div onclick="openDesignDetail('${r.id}')" class="row" style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="width:3px;height:28px;border-radius:2px;background:${sc};flex-shrink:0"></span>
@@ -1498,7 +1510,7 @@ function rDesignCard(r){
         <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
           <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:1px 5px;font-weight:700">${r.priority}</span>
           ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 5px;font-weight:700">${esc(r.brand)}</span>`:''}
-          ${dl?`<span style="font-size:9px;color:#9b9794">${dl}</span>`:''}
+          ${dlLabel?`<span style="font-size:9px;font-weight:700;background:${dlBg};color:${dlColor};border:1px solid ${dlBorder};border-radius:4px;padding:1px 5px">${dlLabel}</span>`:''}
         </div>
       </div>
       <select onclick="event.stopPropagation()" onchange="updateDesignStatus('${r.id}',this.value)" style="font-size:10px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;color:${sc};font-weight:700;cursor:pointer;outline:none">
