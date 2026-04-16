@@ -471,6 +471,14 @@ async function openDesignDetail(id){
   S.designDetail.contentLoading=false;render();
 }
 function closeDesignDetail(){S.designDetail=null;render();}
+async function deleteDesignReq(id){
+  if(!confirm('이 디자인 요청을 삭제할까요?'))return;
+  const prev=S.designReqs;
+  S.designReqs=(S.designReqs||[]).filter(r=>r.id!==id);
+  S.designDetail=null;render();
+  try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('디자인 요청 삭제됨');}
+  catch(e){S.designReqs=prev;toast('삭제 실패: '+e.message,true);render();}
+}
 function renderBlock(b){
   const t=b.type;
   if(t==='heading_2'){const rt=b.heading_2.rich_text.map(r=>renderRichText(r)).join('');return`<div style="font-size:13px;font-weight:800;color:#1c1a17;margin:12px 0 6px;padding:4px 0;border-bottom:1px solid #f0eee9">${rt}</div>`;}
@@ -1499,7 +1507,10 @@ function rDesignDetailModal(){
         ${contentHtml}
       </div>
       <div style="padding:10px 18px 14px;border-top:1px solid #e8e4de;flex-shrink:0">
-        <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px">상태 변경</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+          <div style="font-size:10px;font-weight:700;color:#9b9794">상태 변경</div>
+          <button onclick="deleteDesignReq('${d.id}')" style="background:none;border:1px solid #fecaca;border-radius:5px;padding:3px 9px;font-size:9px;font-weight:700;color:#b91c1c;cursor:pointer">삭제</button>
+        </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           ${D_STATUS.map(s=>{const c=D_STATUS_COLOR[s];const sel=d.status===s;return`<button onclick="updateDesignStatus('${d.id}','${s}');closeDesignDetail()"
             style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;
