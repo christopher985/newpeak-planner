@@ -141,6 +141,7 @@ const GCAL_CLIENT_ID='676763456182-fb87paibmcuuo5m8rap81k0ho9p3g43v.apps.googleu
 const GCAL_SCOPE='https://www.googleapis.com/auth/calendar.readonly';
 const YT_CAL_ID='c_264fb060e1a577a7e108de8e72c93ca7a6ef4bc541dc4dce62ec522e66c89bb7@group.calendar.google.com';
 const GCAL_TOKEN_KEY='newpick-gcal-token';
+const GCAL_TOKEN_EXP_KEY='newpick-gcal-token-exp';
 
 const YT_BRAND_KW=[
   {kw:'진수성찬',label:'진수성찬',color:'#e05c1a'},
@@ -186,7 +187,7 @@ function ytByDate(){
 }
 
 let _gcalClient=null;
-function _getGcalClient(){
+function _getGcalClient(onError){
   if(_gcalClient)return _gcalClient;
   if(typeof google==='undefined')return null;
   _gcalClient=google.accounts.oauth2.initTokenClient({
@@ -194,26 +195,51 @@ function _getGcalClient(){
     scope:GCAL_SCOPE,
     hint:'christopher@newpeak.kr',
     callback:(resp)=>{
-      if(resp.error){console.warn('gcal auth:',resp.error);return;}
+      if(resp.error){
+        console.warn('gcal auth:',resp.error);
+        if(onError)onError(resp.error);
+        return;
+      }
       gcalToken=resp.access_token;
       localStorage.setItem(GCAL_TOKEN_KEY,gcalToken);
+      const expMs=Date.now()+(resp.expires_in||3600)*1000-60000;
+      localStorage.setItem(GCAL_TOKEN_EXP_KEY,String(expMs));
       render();loadYtEvents();
     }
   });
   return _gcalClient;
 }
-function gcalAuth(){
+function gcalTokenValid(){
+  if(!gcalToken)return false;
+  const exp=Number(localStorage.getItem(GCAL_TOKEN_EXP_KEY)||0);
+  return Date.now()<exp;
+}
+function gcalAuth(silent){
   const c=_getGcalClient();
-  if(!c){setTimeout(gcalAuth,500);return;}
-  c.requestAccessToken({prompt:''});
+  if(!c){setTimeout(()=>gcalAuth(silent),500);return;}
+  if(silent){
+    c.requestAccessToken({prompt:'none'});
+  } else {
+    c.requestAccessToken({prompt:''});
+  }
+}
+function gcalEnsureToken(){
+  if(gcalTokenValid()){loadYtEvents();return;}
+  const c=_getGcalClient(function(err){
+    if(err==='popup_blocked_by_browser'||err==='access_denied')return;
+    gcalAuth(false);
+  });
+  if(!c){setTimeout(gcalEnsureToken,500);return;}
+  c.requestAccessToken({prompt:'none'});
 }
 function gcalDisconnect(){
-  gcalToken='';localStorage.removeItem(GCAL_TOKEN_KEY);
-  if(typeof google!=='undefined')google.accounts.oauth2.revoke(gcalToken,()=>{});
+  const oldToken=gcalToken;
+  gcalToken='';localStorage.removeItem(GCAL_TOKEN_KEY);localStorage.removeItem(GCAL_TOKEN_EXP_KEY);
+  if(typeof google!=='undefined'&&oldToken)google.accounts.oauth2.revoke(oldToken,()=>{});
   YT_EVENTS=[];render();toast('Google Calendar 연동 해제');
 }
 async function loadYtEvents(){
-  if(!gcalToken){gcalAuth();return;}
+  if(!gcalToken){gcalEnsureToken();return;}
   const y=S.calYear,m=S.calMonth;
   const tMin=`${y}-${String(m+1).padStart(2,'0')}-01T00:00:00+09:00`;
   const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();
@@ -222,8 +248,8 @@ async function loadYtEvents(){
     const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(YT_CAL_ID)}/events?timeMin=${encodeURIComponent(tMin)}&timeMax=${encodeURIComponent(tMax)}&singleEvents=true&orderBy=startTime&maxResults=100&timeZone=Asia/Seoul`;
     const res=await fetch(url,{headers:{Authorization:'Bearer '+gcalToken}});
     if(res.status===401){
-      localStorage.removeItem(GCAL_TOKEN_KEY);gcalToken='';
-      gcalAuth();return;
+      localStorage.removeItem(GCAL_TOKEN_KEY);localStorage.removeItem(GCAL_TOKEN_EXP_KEY);gcalToken='';
+      gcalEnsureToken();return;
     }
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();
@@ -1662,7 +1688,7 @@ function resetToken(){
 ══════════════════════════════════════ */
 render();
 // Google Calendar 자동 연동 (GIS 로딩 대기 후)
-setTimeout(()=>loadYtEvents(),800);
+setTimeout(()=>gcalEnsureToken(),800);
 if(S.token){
   if(S.team==='디자인'){loadDesignReqs();}
   else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);}
