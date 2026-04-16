@@ -680,7 +680,7 @@ async function doAdd(text){
     if(weekday) props['요일']={select:{name:weekday}};
     if(S.team==='퍼포먼스'&&S.addBrand) props['브랜드']={select:{name:S.addBrand}};
     if(S.team==='퍼포먼스'&&S.addArea) props['영역']={select:{name:S.addArea}};
-    if(S.team==='퍼포먼스'&&S.addColor) props['색상']={select:{name:S.addColor}};
+    // 색상은 로컬 전용 (Notion DB에 속성 없음)
     const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:props});
     const i=S.tasks[k].findIndex(t=>t.id===tid);
     if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',color:S.team==='퍼포먼스'?S.addColor:null};
@@ -752,7 +752,7 @@ async function saveMemo(){
       else props['브랜드']={select:null};
       if(m.area)props['영역']={select:{name:m.area}};
       else props['영역']={select:null};
-      if(m.color)props['색상']={select:{name:m.color}};
+      // 색상은 로컬 전용 (Notion DB에 속성 없음)
     }
     await notion('PATCH',`/pages/${m.id}`,{properties:props});
   }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
