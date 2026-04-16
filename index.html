@@ -1496,11 +1496,9 @@ function rCalendar(){
   const rem=(Math.ceil(cells.length/7)*7)-cells.length;
   for(let d=1;d<=rem;d++){const nm=month+1>11?0:month+1,ny=month+1>11?year+1:year;cells.push({d,ds:`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,otherMonth:true});}
   const isDesign=S.team==='디자인';
-  const isContent=S.team==='콘텐츠';
-  // 디자인/콘텐츠 탭: 데드라인별 요청 수 집계
+  // 디자인 탭: 데드라인별 요청 수 집계
   const dlCount={};
   if(isDesign&&S.designReqs){S.designReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
-  if(isContent&&S.contentReqs){S.contentReqs.filter(r=>r.people.includes(S.user)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
   const dlMax=Math.max(1,...Object.values(dlCount));
 
   const cellHtml=cells.map(({d,ds,otherMonth})=>{
@@ -1514,7 +1512,7 @@ function rCalendar(){
 
     let dots='';
     let bgStyle='';
-    if((isDesign||isContent)&&!otherMonth){
+    if(isDesign&&!otherMonth){
       const cnt=dlCount[ds]||0;
       if(cnt>0){
         const ratio=Math.min(cnt/dlMax,1);
