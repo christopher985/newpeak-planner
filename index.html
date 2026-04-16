@@ -648,7 +648,6 @@ async function saveMemo(){
       if(m.area)props['영역']={select:{name:m.area}};
       else props['영역']={select:null};
       if(m.color)props['색상']={select:{name:m.color}};
-      else props['색상']={select:null};
     }
     await notion('PATCH',`/pages/${m.id}`,{properties:props});
   }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
