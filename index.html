@@ -1510,9 +1510,9 @@ function rDesignCard(r){
         <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
           <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:1px 5px;font-weight:700">${r.priority}</span>
           ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 5px;font-weight:700">${esc(r.brand)}</span>`:''}
-          ${dlLabel?`<span style="font-size:9px;font-weight:700;background:${dlBg};color:${dlColor};border:1px solid ${dlBorder};border-radius:4px;padding:1px 5px">${dlLabel}</span>`:''}
         </div>
       </div>
+      ${dlLabel?`<span style="font-size:9px;font-weight:600;color:${dlColor};white-space:nowrap;flex-shrink:0">${dlLabel}</span>`:''}
       <select onclick="event.stopPropagation()" onchange="updateDesignStatus('${r.id}',this.value)" style="font-size:10px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;color:${sc};font-weight:700;cursor:pointer;outline:none">
         ${D_STATUS.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}
       </select>
