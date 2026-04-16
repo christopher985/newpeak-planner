@@ -301,6 +301,7 @@ let S = {
   designAdd: null, designDetail: null,
   contentReqs: null, cL: false,
   contentAdd: null, contentDetail: null,
+  cIncSort: 'time', cManualOrder: [],
 };
 
 /* ══════════════════════════════════════
@@ -647,6 +648,74 @@ async function deleteContentReq(id){
   S.contentDetail=null;render();
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('콘텐츠 업무 삭제됨');}
   catch(e){S.contentReqs=prev;toast('삭제 실패: '+e.message,true);render();}
+}
+function setCIncSort(v){S.cIncSort=v;render();}
+function sortCInc(arr){
+  const s=S.cIncSort;
+  if(s==='status'){const ord={'진행 중':0,'시작 전':1};return[...arr].sort((a,b)=>(ord[a.status]??9)-(ord[b.status]??9));}
+  if(s==='manual'){
+    const order=S.cManualOrder;
+    if(!order.length)return arr;
+    return[...arr].sort((a,b)=>{const ai=order.indexOf(a.id),bi=order.indexOf(b.id);return(ai<0?999:ai)-(bi<0?999:bi);});
+  }
+  // time: 마감일 오름차순 (없으면 뒤로)
+  return[...arr].sort((a,b)=>(a.deadline||'9999').localeCompare(b.deadline||'9999'));
+}
+function cDragStart(e,id){_dragId=id;e.dataTransfer.effectAllowed='move';e.target.style.opacity='.5';}
+function cDragEnd(e){e.target.style.opacity='1';_dragId=null;document.querySelectorAll('.drag-over').forEach(r=>r.classList.remove('drag-over'));}
+function cDropCard(e,targetId){
+  e.preventDefault();e.stopPropagation();
+  if(!_dragId||_dragId===targetId)return;
+  const allReqs=S.contentReqs||[];
+  const notionName=S.user;
+  const inc=allReqs.filter(r=>r.people.includes(notionName)&&r.status!=='완료');
+  const order=S.cManualOrder.length?[...S.cManualOrder]:inc.map(r=>r.id);
+  if(!order.includes(_dragId))order.push(_dragId);
+  const fi=order.indexOf(_dragId),ti=order.indexOf(targetId);
+  if(fi>=0&&ti>=0){order.splice(fi,1);order.splice(ti,0,_dragId);}
+  S.cManualOrder=order;
+  S.cIncSort='manual';
+  _dragId=null;render();
+}
+function cTouchStart(e,id){
+  _tMoved=false;
+  _tTimer=setTimeout(()=>{
+    _tId=id;_tActive=true;_tMoved=true;
+    const el=e.target.closest('.row');
+    if(!el)return;
+    _tClone=el.cloneNode(true);
+    const r=el.getBoundingClientRect();
+    _tClone.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;opacity:.8;z-index:2000;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.18);border:2px solid #ec4899;border-radius:10px;transition:none`;
+    document.body.appendChild(_tClone);
+    el.style.opacity='.3';
+    if(navigator.vibrate)navigator.vibrate(30);
+  },400);
+  document.addEventListener('touchmove',tMove,{passive:false});
+  document.addEventListener('touchend',cTouchCancel,{once:true});
+}
+function cTouchEnd(e,cardId){
+  document.removeEventListener('touchmove',tMove);
+  clearTimeout(_tTimer);
+  if(!_tActive){_tId=null;return;}
+  if(_tClone){_tClone.remove();_tClone=null;}
+  document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
+  const touch=e.changedTouches[0];
+  const el=document.elementFromPoint(touch.clientX,touch.clientY);
+  if(el&&_tId){
+    const dropRow=el.closest('.row');
+    if(dropRow){
+      const tid=dropRow.getAttribute('data-tid');
+      if(tid&&tid!==_tId){_dragId=_tId;cDropCard({preventDefault(){},stopPropagation(){}},tid);}
+    }
+  }
+  _tId=null;_tActive=false;
+}
+function cTouchCancel(){
+  document.removeEventListener('touchmove',tMove);
+  clearTimeout(_tTimer);
+  if(_tClone){_tClone.remove();_tClone=null;}
+  document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
+  _tId=null;_tActive=false;
 }
 
 function renderBlock(b){
@@ -1761,6 +1830,7 @@ function rContentLayout(){
   const notionName=S.user;
   const reqs=allReqs.filter(r=>r.people.includes(notionName));
   const inc=reqs.filter(r=>r.status!=='완료');
+  const sortedInc=sortCInc(inc);
   const calMonthStr=`${S.calYear}-${String(S.calMonth+1).padStart(2,'0')}`;
   const dn=reqs.filter(r=>r.status==='완료'&&r.deadline&&r.deadline.startsWith(calMonthStr));
   const skeletons=`<div class="sk" style="height:52px;margin-bottom:7px"></div><div class="sk" style="height:52px;margin-bottom:7px;opacity:.7"></div><div class="sk" style="height:52px;opacity:.4"></div>`;
@@ -1806,13 +1876,19 @@ function rContentLayout(){
   return`<div class="perf-grid">
     <!-- 좌: 미완료 (시작 전 + 진행 중) -->
     <div class="perf-col-inc">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
-        <span style="width:3px;height:14px;border-radius:2px;background:${tc};display:inline-block"></span>
-        <span style="font-size:12px;font-weight:800;color:#1c1a17">미완료</span>
-        ${inc.length?`<span style="font-size:10px;background:${tc}18;color:${tc};border-radius:8px;padding:2px 7px;font-weight:700">${inc.length}</span>`:''}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="width:3px;height:14px;border-radius:2px;background:${tc};display:inline-block"></span>
+          <span style="font-size:12px;font-weight:800;color:#1c1a17">미완료</span>
+          ${inc.length?`<span style="font-size:10px;background:${tc}18;color:${tc};border-radius:8px;padding:2px 7px;font-weight:700">${inc.length}</span>`:''}
+        </div>
+        ${inc.length>1?`<div style="display:flex;gap:2px">
+          ${[{k:'time',l:'시간순'},{k:'status',l:'상태'},{k:'manual',l:'수동'}].map(b=>`<button onclick="setCIncSort('${b.k}')" style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;
+            background:${S.cIncSort===b.k?tc:'#f5f3ef'};border:1px solid ${S.cIncSort===b.k?tc:'#e8e4de'};color:${S.cIncSort===b.k?'#fff':'#9b9794'}">${b.l}</button>`).join('')}
+        </div>`:''}
       </div>
-      <div style="min-height:40px">
-        ${S.cL&&!reqs.length?skeletons:inc.length?inc.map(r=>rContentCard(r)).join(''):`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:22px 16px;text-align:center">
+      <div ondragover="dOver(event)" style="min-height:40px">
+        ${S.cL&&!reqs.length?skeletons:sortedInc.length?sortedInc.map(r=>rContentCard(r)).join(''):`<div style="background:#fff;border:1.5px dashed #e8e4de;border-radius:10px;padding:22px 16px;text-align:center">
           <div style="font-size:18px;margin-bottom:6px">📋</div>
           <div style="font-size:12px;color:#9b9794">진행 중 업무 없음</div>
         </div>`}
@@ -1849,7 +1925,8 @@ function rContentCard(r,dim){
     else{dlColor='#15803d';}
   }
   const stColor=C_STATUS_COLOR[r.status]||'#6b7280';
-  return`<div onclick="openContentDetail('${r.id}')" class="row" style="background:${dim?'#faf9f7':'#fff'};border:1px solid #e8e4de;border-radius:10px;padding:10px 12px;margin-bottom:7px;cursor:pointer;box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'};opacity:${dim?.55:1}">
+  const dragAttr=!dim?`draggable="true" ondragstart="cDragStart(event,'${r.id}')" ondragend="cDragEnd(event)" ondragover="dOver(event)" ondrop="cDropCard(event,'${r.id}')" ontouchstart="cTouchStart(event,'${r.id}')" ontouchend="cTouchEnd(event,'${r.id}')"`:''
+  return`<div onclick="openContentDetail('${r.id}')" class="row" ${dragAttr} data-tid="${r.id}" style="background:${dim?'#faf9f7':'#fff'};border:1px solid #e8e4de;border-radius:10px;padding:10px 12px;margin-bottom:7px;cursor:${dim?'pointer':'grab'};box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'};opacity:${dim?.55:1}">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="width:3px;height:28px;border-radius:2px;background:${sc};flex-shrink:0"></span>
       <div style="flex:1;min-width:0">
