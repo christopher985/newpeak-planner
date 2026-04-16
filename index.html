@@ -351,9 +351,33 @@ async function deleteCrmEvent(id){
   try{await notion('PATCH','/pages/'+id,{archived:true});toast('삭제됨');}
   catch(e){S.crmEvents=prev;m.items=prev.filter(e=>e.date===m.date);toast('삭제 실패: '+e.message,true);render();}
 }
-function openCrmDetail(id){
+async function openCrmDetail(id){
   const ev=S.crmEvents.find(e=>e.id===id);if(!ev)return;
-  S.crmDetail={...ev};render();
+  S.crmDetail={...ev,blocks:null,blocksLoading:true};render();
+  try{
+    const res=await notion('GET',`/blocks/${id}/children?page_size=100`);
+    const blocks=res.results||[];
+    await loadBlockChildren(id,blocks);
+    // column_list 자식도 로드
+    for(const b of blocks){
+      if(b.type==='column_list'){
+        const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
+        b._children=cols.results||[];
+        for(const col of b._children){
+          const items=await notion('GET',`/blocks/${col.id}/children?page_size=20`);
+          col._children=items.results||[];
+          for(const item of col._children){
+            if(item.type==='table'&&item.has_children){
+              const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);
+              item._children=rows.results||[];
+            }
+          }
+        }
+      }
+    }
+    S.crmDetail.blocks=blocks;
+  }catch(e){S.crmDetail.blocks=[];}
+  S.crmDetail.blocksLoading=false;render();
 }
 function closeCrmDetail(){S.crmDetail=null;render();}
 function setCrmDetailField(f,v){if(S.crmDetail)S.crmDetail[f]=v;}
@@ -856,6 +880,9 @@ function renderBlock(b){
   if(t==='toggle'){const rt=b.toggle.rich_text.map(r=>renderRichText(r)).join('');return`<details style="margin:4px 0;font-size:12px"><summary style="font-weight:700;color:#2563eb;cursor:pointer">${rt}</summary></details>`;}
   if(t==='divider')return`<hr style="border:none;border-top:1px solid #e8e4de;margin:8px 0"/>`;
   if(t==='image'){const url=b.image?.file?.url||b.image?.external?.url||'';return url?`<img src="${esc(url)}" style="max-width:100%;border-radius:6px;margin:6px 0"/>`:'';}
+  if(t==='column_list'){return`<div style="display:flex;gap:12px;margin:6px 0;flex-wrap:wrap">${(b._children||[]).map(col=>
+    `<div style="flex:1;min-width:180px">${(col._children||[]).map(item=>renderBlock(item)).join('')}</div>`
+  ).join('')}</div>`;}
   return'';
 }
 function renderRichText(r){
@@ -1116,6 +1143,11 @@ function rCrmDetailModal(){
         </div>
       </div>
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+        ${d.blocksLoading?`<div style="display:flex;align-items:center;justify-content:center;padding:16px;gap:8px"><div class="sp"></div><span style="font-size:11px;color:#9b9794">본문 불러오는 중…</span></div>`
+        :d.blocks&&d.blocks.length?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:12px;margin-bottom:4px">
+          <div style="font-size:10px;font-weight:700;color:#ef4444;margin-bottom:8px;letter-spacing:.5px">Notion 본문</div>
+          ${d.blocks.map(b=>renderBlock(b)).join('')}
+        </div>`:''}
         ${txtField('CRM문구','crmText','CRM 발송 문구…')}
         ${txtField('스마트스토어','smartStore','스마트스토어 메모…')}
         ${txtField('톡채널','talkChannel','톡채널 메모…')}
