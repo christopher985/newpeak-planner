@@ -286,6 +286,15 @@ async function loadCrmEvents(){
       id:p.id,
       title:txt(p.properties['이름']),
       date:p.properties['날짜']?.date?.start||'',
+      crmText:txt(p.properties['CRM문구'])||'',
+      smartStore:txt(p.properties['스마트스토어'])||'',
+      talkChannel:txt(p.properties['톡채널'])||'',
+      spend:p.properties['지출']?.number??null,
+      revenue:p.properties['매출']?.number??null,
+      orders:p.properties['주문건']?.number??null,
+      views:p.properties['열람수']?.number??null,
+      clicks:p.properties['클릭수']?.number??null,
+      cvr:p.properties['CVR']?.number??null,
     }));
     _crmLoaded=key;render();
   }catch(e){S.crmEvents=[];toast('CRM 로드 실패: '+e.message,true);}
@@ -326,7 +335,7 @@ async function addCrmEvent(){
       '이름':{title:[{text:{content:title}}]},
       '날짜':{date:{start:m.date}},
     }});
-    const ev={id:res.id,title,date:m.date};
+    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null};
     S.crmEvents.push(ev);
     m.items.push(ev);
     render();toast('CRM 일정 추가됨');
@@ -340,6 +349,41 @@ async function deleteCrmEvent(id){
   render();
   try{await notion('PATCH','/pages/'+id,{archived:true});toast('삭제됨');}
   catch(e){S.crmEvents=prev;m.items=prev.filter(e=>e.date===m.date);toast('삭제 실패: '+e.message,true);render();}
+}
+function openCrmDetail(id){
+  const ev=S.crmEvents.find(e=>e.id===id);if(!ev)return;
+  S.crmDetail={...ev};render();
+}
+function closeCrmDetail(){S.crmDetail=null;render();}
+function setCrmDetailField(f,v){if(S.crmDetail)S.crmDetail[f]=v;}
+async function saveCrmDetail(){
+  const d=S.crmDetail;if(!d)return;
+  if(!d.title.trim()){toast('제목을 입력해주세요',true);return;}
+  const ev=S.crmEvents.find(e=>e.id===d.id);
+  const prev=ev?{...ev}:null;
+  if(ev)Object.assign(ev,d);
+  // crmModal items도 동기화
+  if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
+  S.crmDetail=null;render();
+  try{
+    const props={
+      '이름':{title:[{text:{content:d.title.trim()}}]},
+      'CRM문구':{rich_text:d.crmText?[{text:{content:d.crmText}}]:[]},
+      '스마트스토어':{rich_text:d.smartStore?[{text:{content:d.smartStore}}]:[]},
+      '톡채널':{rich_text:d.talkChannel?[{text:{content:d.talkChannel}}]:[]},
+      '지출':{number:d.spend!==null&&d.spend!==''?Number(d.spend):null},
+      '매출':{number:d.revenue!==null&&d.revenue!==''?Number(d.revenue):null},
+      '주문건':{number:d.orders!==null&&d.orders!==''?Number(d.orders):null},
+      '열람수':{number:d.views!==null&&d.views!==''?Number(d.views):null},
+      '클릭수':{number:d.clicks!==null&&d.clicks!==''?Number(d.clicks):null},
+      'CVR':{number:d.cvr!==null&&d.cvr!==''?Number(d.cvr):null},
+    };
+    await notion('PATCH','/pages/'+d.id,{properties:props});
+    toast('저장됨');
+  }catch(e){
+    if(ev&&prev)Object.assign(ev,prev);
+    toast('저장 실패: '+e.message,true);render();
+  }
 }
 
 /* ══════════════════════════════════════
@@ -374,6 +418,7 @@ let S = {
   calMode: 'promo', // 'promo' | 'crm'
   crmEvents: [],
   crmModal: null, // {date, items, addTitle:''}
+  crmDetail: null, // crm event detail editing
   designReqs: null, dL: false,
   designAdd: null, designDetail: null,
   contentReqs: null, cL: false,
@@ -1017,18 +1062,14 @@ function rCrmModal(){
       </div>
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
         ${m.items.length?m.items.map(ev=>{
-          if(m.editId===ev.id){
-            return`<div style="display:flex;gap:6px;align-items:center">
-              <input value="${esc(m.editTitle)}" oninput="S.crmModal.editTitle=this.value" onkeydown="if(event.key==='Enter')saveCrmEdit();if(event.key==='Escape')cancelCrmEdit()"
-                style="flex:1;background:#f9f8f6;border:1.5px solid #3b82f6;border-radius:6px;padding:7px 10px;font-size:12px;color:#1c1a17;outline:none"/>
-              <button onclick="saveCrmEdit()" style="background:#3b82f6;border:none;border-radius:6px;padding:6px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">저장</button>
-              <button onclick="cancelCrmEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;padding:6px 8px;font-size:10px;font-weight:700;color:#9b9794;cursor:pointer">취소</button>
-            </div>`;
-          }
-          return`<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 12px">
+          const hasData=ev.spend||ev.revenue||ev.orders||ev.crmText;
+          return`<div onclick="openCrmDetail('${ev.id}')" style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:8px 12px;cursor:pointer;transition:background .1s" onmouseenter="this.style.background='#f9f8f6'" onmouseleave="this.style.background='#fff'">
             <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
-            <span onclick="startCrmEdit('${ev.id}','${esc(ev.title)}')" style="flex:1;font-size:13px;color:#1c1a17;cursor:pointer" title="클릭하여 수정">${esc(ev.title)}</span>
-            <button onclick="deleteCrmEvent('${ev.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;line-height:1;opacity:.6">×</button>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;color:#1c1a17;font-weight:600">${esc(ev.title)}</div>
+              ${hasData?`<div style="font-size:9px;color:#9b9794;margin-top:2px">${ev.spend?'지출:'+Number(ev.spend).toLocaleString()+'  ':''} ${ev.revenue?'매출:'+Number(ev.revenue).toLocaleString():''}</div>`:''}
+            </div>
+            <button onclick="event.stopPropagation();deleteCrmEvent('${ev.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;line-height:1;opacity:.6;flex-shrink:0">×</button>
           </div>`;
         }).join(''):`<div style="text-align:center;padding:16px 0;color:#9b9794;font-size:12px">등록된 일정이 없습니다</div>`}
       </div>
@@ -1040,6 +1081,58 @@ function rCrmModal(){
             onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'"/>
           <button type="submit" style="background:#ef4444;border:none;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer">추가</button>
         </form>
+      </div>
+    </div>
+  </div>`;
+}
+function rCrmDetailModal(){
+  const d=S.crmDetail;if(!d)return'';
+  const numField=(label,field,unit)=>`<div style="display:flex;align-items:center;gap:8px">
+    <span style="font-size:10px;font-weight:700;color:#9b9794;width:48px;flex-shrink:0">${label}</span>
+    <input type="number" value="${d[field]!==null&&d[field]!==undefined?d[field]:''}" oninput="setCrmDetailField('${field}',this.value===''?null:Number(this.value))"
+      style="flex:1;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"
+      onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'"/>
+    ${unit?`<span style="font-size:10px;color:#9b9794;width:16px">${unit}</span>`:''}
+  </div>`;
+  const txtField=(label,field,ph)=>`<div>
+    <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px">${label}</div>
+    <textarea oninput="setCrmDetailField('${field}',this.value)" placeholder="${ph||''}"
+      style="width:100%;min-height:50px;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:#1c1a17;outline:none;resize:vertical;font-family:inherit"
+      onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'">${esc(d[field]||'')}</textarea>
+  </div>`;
+  return`<div onclick="if(event.target===this)closeCrmDetail()" style="position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2);overflow:hidden">
+      <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:9px;font-weight:700;color:#ef4444;letter-spacing:1px;margin-bottom:4px">CRM 상세</div>
+            <input value="${esc(d.title)}" oninput="setCrmDetailField('title',this.value)"
+              style="width:100%;font-size:15px;font-weight:700;color:#1c1a17;background:transparent;border:none;border-bottom:1.5px solid transparent;outline:none;padding:0 0 2px"
+              onfocus="this.style.borderBottomColor='#ef4444'" onblur="this.style.borderBottomColor='transparent'"/>
+            <div style="font-size:11px;color:#9b9794;margin-top:4px">${d.date}</div>
+          </div>
+          <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
+        </div>
+      </div>
+      <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+        ${txtField('CRM문구','crmText','CRM 발송 문구…')}
+        ${txtField('스마트스토어','smartStore','스마트스토어 메모…')}
+        ${txtField('톡채널','talkChannel','톡채널 메모…')}
+        <div style="border-top:1px solid #e8e4de;padding-top:12px">
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">성과 지표</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${numField('지출','spend','')}
+            ${numField('매출','revenue','')}
+            ${numField('주문건','orders','')}
+            ${numField('열람수','views','')}
+            ${numField('클릭수','clicks','')}
+            ${numField('CVR','cvr','%')}
+          </div>
+        </div>
+      </div>
+      <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:flex-end;gap:8px">
+        <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
+        <button onclick="saveCrmDetail()" style="background:#ef4444;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>
       </div>
     </div>
   </div>`;
@@ -2271,7 +2364,8 @@ function render(){
     </div>
     ${rMemoModal()}
     ${rSchedEditModal()}
-    ${rCrmModal()}`;
+    ${rCrmModal()}
+    ${rCrmDetailModal()}`;
   _restoreInput();
 }
 
