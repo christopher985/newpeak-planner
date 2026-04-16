@@ -296,6 +296,8 @@ async function loadCrmEvents(){
       views:p.properties['열람수']?.number??null,
       clicks:p.properties['클릭수']?.number??null,
       cvr:p.properties['CVR']?.number??null,
+      ssSendTime:txt(p.properties['스마트스토어 발송시각'])||'',
+      tkSendTime:txt(p.properties['톡채널 발송시각'])||'',
     }));
     _crmLoaded=key;render();
   }catch(e){S.crmEvents=[];toast('CRM 로드 실패: '+e.message,true);}
@@ -336,7 +338,7 @@ async function addCrmEvent(){
       '이름':{title:[{text:{content:title}}]},
       '날짜':{date:{start:m.date}},
     }});
-    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null};
+    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null,ssSendTime:'',tkSendTime:''};
     S.crmEvents.push(ev);
     m.items.push(ev);
     render();toast('CRM 일정 추가됨');
@@ -396,6 +398,8 @@ async function saveCrmDetail(){
       'CRM문구':{rich_text:d.crmText?[{text:{content:d.crmText}}]:[]},
       '스마트스토어':{rich_text:d.smartStore?[{text:{content:d.smartStore}}]:[]},
       '톡채널':{rich_text:d.talkChannel?[{text:{content:d.talkChannel}}]:[]},
+      '스마트스토어 발송시각':{rich_text:d.ssSendTime?[{text:{content:d.ssSendTime}}]:[]},
+      '톡채널 발송시각':{rich_text:d.tkSendTime?[{text:{content:d.tkSendTime}}]:[]},
       '지출':{number:d.spend!==null&&d.spend!==''?Number(d.spend):null},
       '매출':{number:d.revenue!==null&&d.revenue!==''?Number(d.revenue):null},
       '주문건':{number:d.orders!==null&&d.orders!==''?Number(d.orders):null},
@@ -1149,8 +1153,31 @@ function rCrmDetailModal(){
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
         ${txtField('CRM문구','crmText','CRM 발송 문구…')}
-        ${txtField('스마트스토어','smartStore','스마트스토어 메모…')}
-        ${txtField('톡채널','talkChannel','톡채널 메모…')}
+        <div style="border-top:1px solid #e8e4de;padding-top:12px">
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">발송 채널</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px;background:${d.smartStore||d.ssSendTime?'#f0fdf4':'#f9f8f6'};border:1px solid ${d.smartStore||d.ssSendTime?'#bbf7d0':'#e8e4de'};border-radius:8px;padding:10px">
+              <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                <span style="width:8px;height:8px;border-radius:50%;background:${d.smartStore||d.ssSendTime?'#22c55e':'#d1d5db'}"></span>
+                <span style="font-size:10px;font-weight:700;color:${d.smartStore||d.ssSendTime?'#15803d':'#9b9794'}">스마트스토어</span>
+              </div>
+              <input value="${esc(d.ssSendTime)}" oninput="setCrmDetailField('ssSendTime',this.value)" placeholder="발송시각 (예: 19:55)"
+                style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
+              <textarea oninput="setCrmDetailField('smartStore',this.value)" placeholder="메모…"
+                style="width:100%;min-height:36px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit">${esc(d.smartStore||'')}</textarea>
+            </div>
+            <div style="flex:1;min-width:160px;background:${d.talkChannel||d.tkSendTime?'#eff6ff':'#f9f8f6'};border:1px solid ${d.talkChannel||d.tkSendTime?'#bfdbfe':'#e8e4de'};border-radius:8px;padding:10px">
+              <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                <span style="width:8px;height:8px;border-radius:50%;background:${d.talkChannel||d.tkSendTime?'#3b82f6':'#d1d5db'}"></span>
+                <span style="font-size:10px;font-weight:700;color:${d.talkChannel||d.tkSendTime?'#1d4ed8':'#9b9794'}">톡채널</span>
+              </div>
+              <input value="${esc(d.tkSendTime)}" oninput="setCrmDetailField('tkSendTime',this.value)" placeholder="발송시각 (예: 20:00)"
+                style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
+              <textarea oninput="setCrmDetailField('talkChannel',this.value)" placeholder="메모…"
+                style="width:100%;min-height:36px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit">${esc(d.talkChannel||'')}</textarea>
+            </div>
+          </div>
+        </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">성과 지표</div>
           <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;text-align:center">
