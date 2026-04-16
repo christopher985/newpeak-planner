@@ -427,6 +427,7 @@ async function loadDesignReqs(){
       priority:p.properties['중요도']?.status?.name||'보통',
       deadline:p.properties['Dead Line']?.date?.start||null,
       edited:p.properties['최종 편집 일시']?.last_edited_time||null,
+      requester:p.created_by?.name||null,
     }));
   }catch(e){S.designReqs=[];toast('디자인 요청 로드 실패: '+e.message,true);}
   S.dL=false;render();
@@ -1518,6 +1519,7 @@ function rDesignCard(r){
         <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
           <span style="font-size:9px;background:${pc}18;color:${pc};border:1px solid ${pc}44;border-radius:4px;padding:1px 5px;font-weight:700">${r.priority}</span>
           ${bc?`<span style="font-size:9px;background:${bc}18;color:${bc};border:1px solid ${bc}44;border-radius:4px;padding:1px 5px;font-weight:700">${esc(r.brand)}</span>`:''}
+          ${r.requester?`<span style="font-size:9px;color:#9b9794;font-weight:600">${esc(r.requester)}</span>`:''}
         </div>
       </div>
       ${dlLabel?`<span style="font-size:9px;font-weight:600;color:${dlColor};white-space:nowrap;flex-shrink:0">${dlLabel}</span>`:''}
