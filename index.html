@@ -113,6 +113,8 @@ const UC = {
   '조이':'#8b5cf6',
   '조셉':'#f59e0b'
 };
+const EN={'크리스토퍼':'Christopher','켈리':'Kelly','에디':'Eddie','마틴':'Martin','지미':'Jimmy','테오':'Theo','코비':'Coby','제니':'Jenny','카일':'Kyle','크리스':'Chris','조이':'Joy','조셉':'Joseph'};
+function en(name){return EN[name]||name;}
 const DAY_NAMES = ['일','월','화','수','목','금','토'];
 const WEEKDAY_KR = ['월','화','수','목','금'];
 const SLOT_ORDER = ['오전','오후'];
@@ -140,7 +142,7 @@ const D_PRIORITY_COLOR={'긴급':'#ef4444','보통':'#f59e0b','낮음':'#22c55e'
 /* ── 콘텐츠탭 상수 ── */
 const C_STATUS=['시작 전','진행 중','완료'];
 const C_STATUS_COLOR={'시작 전':'#6b7280','진행 중':'#ec4899','완료':'#22c55e'};
-const C_NAME_MAP={'지미':'Jimmy','테오':'Theo','코비':'Coby','제니':'Jenny'};
+// C_NAME_MAP은 EN 매핑으로 대체
 
 /* ── YouTube 캘린더 연동 (Google Calendar API OAuth) ── */
 const GCAL_CLIENT_ID='676763456182-fb87paibmcuuo5m8rap81k0ho9p3g43v.apps.googleusercontent.com';
@@ -1105,7 +1107,7 @@ function rCalendar(){
   // 디자인/콘텐츠 탭: 데드라인별 요청 수 집계
   const dlCount={};
   if(isDesign&&S.designReqs){S.designReqs.forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
-  if(isContent&&S.contentReqs){const cn=C_NAME_MAP[S.user]||S.user;S.contentReqs.filter(r=>r.people.includes(cn)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
+  if(isContent&&S.contentReqs){const cn=EN[S.user]||S.user;S.contentReqs.filter(r=>r.people.includes(cn)).forEach(r=>{if(r.deadline){dlCount[r.deadline]=(dlCount[r.deadline]||0)+1;}});}
   const dlMax=Math.max(1,...Object.values(dlCount));
 
   const cellHtml=cells.map(({d,ds,otherMonth})=>{
@@ -1195,7 +1197,7 @@ function rHeader(){
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
         ${members.map(u=>{const a=S.user===u,c=UC[u]||tc;return`<button onclick="selUser('${esc(u)}')"
           style="background:${a?c:'#f5f3ef'};border:1.5px solid ${a?c:'#e8e4de'};border-radius:6px;
-          padding:5px 13px;font-size:11px;font-weight:700;color:${a?'#fff':c};cursor:pointer;transition:all .15s">${esc(u)}</button>`;}).join('')}
+          padding:5px 13px;font-size:11px;font-weight:700;color:${a?'#fff':c};cursor:pointer;transition:all .15s">${esc(en(u))}</button>`;}).join('')}
         <span style="width:1px;height:18px;background:#e8e4de;margin:0 2px"></span>
         <button onclick="refresh()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">↺</button>
         <button onclick="resetToken()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">⚙</button>
@@ -1369,7 +1371,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <span style="width:3px;height:16px;border-radius:2px;background:${ac};display:inline-block;flex-shrink:0"></span>
       <div>
         <div style="font-size:13px;font-weight:800;color:#1c1a17">${dateTitle}</div>
-        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(S.user)}</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(en(S.user))}</div>
       </div>
     </div>
     <!-- 브랜드 + 입력 -->
@@ -1483,7 +1485,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           <span style="width:3px;height:18px;border-radius:2px;display:inline-block;background:${ac}"></span>
           <div>
             <span style="font-size:14px;font-weight:800;color:#1c1a17">${fmtDateKr(S.selectedDate)}</span>
-            <span style="font-size:11px;color:#9b9794;margin-left:8px">${esc(S.user)}</span>
+            <span style="font-size:11px;color:#9b9794;margin-left:8px">${esc(en(S.user))}</span>
           </div>
           ${inc.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:10px;padding:2px 8px;font-weight:700">${inc.length}건 진행 중</span>`:''}
         </div>
@@ -1732,7 +1734,7 @@ function rDesignDetailModal(){
 function rContentLayout(){
   const tc=TEAM_COLOR[S.team]||'#ec4899';
   const allReqs=S.contentReqs||[];
-  const notionName=C_NAME_MAP[S.user]||S.user;
+  const notionName=EN[S.user]||S.user;
   const reqs=allReqs.filter(r=>r.people.includes(notionName));
   const inc=reqs.filter(r=>r.status!=='완료');
   const dn=reqs.filter(r=>r.status==='완료');
@@ -1746,7 +1748,7 @@ function rContentLayout(){
       <span style="width:3px;height:16px;border-radius:2px;background:${tc};display:inline-block;flex-shrink:0"></span>
       <div>
         <div style="font-size:13px;font-weight:800;color:#1c1a17">${dateTitle}</div>
-        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(S.user)}</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:1px">${esc(en(S.user))}</div>
       </div>
     </div>
     <div style="background:#fff;border:1px solid #e8e4de;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
