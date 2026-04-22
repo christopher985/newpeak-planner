@@ -435,6 +435,14 @@ function todayStr(){
 function dateToWeekday(ds){const d=new Date(ds+'T00:00:00Z'),dow=d.getUTCDay();if(dow===0||dow===6)return null;return dow-1;}
 function dateToKrWeekday(ds){const i=dateToWeekday(ds);return i===null?null:WEEKDAY_KR[i];}
 function getKSTNow(){return new Date(Date.now()+9*36e5);}
+function weekRange(ds){
+  const d=new Date(ds+'T00:00:00Z');
+  const dow=d.getUTCDay();
+  const s=new Date(d.getTime()-dow*86400000);
+  const e=new Date(s.getTime()+6*86400000);
+  const fmt=x=>`${x.getUTCFullYear()}-${String(x.getUTCMonth()+1).padStart(2,'0')}-${String(x.getUTCDate()).padStart(2,'0')}`;
+  return{s:fmt(s),e:fmt(e)};
+}
 
 const _savedTeam = localStorage.getItem(TEAM_KEY)||'퍼포먼스';
 let S = {
@@ -484,6 +492,13 @@ function findTask(id){
     const ck='carried-'+S.user;
     const ct=S.tasks[ck]?.find(x=>x.id===id);
     if(ct)return{t:ct,k:ck};
+  }
+  for(const key in S.tasks){
+    if(key===k)continue;
+    const arr=S.tasks[key];
+    if(!arr)continue;
+    const found=arr.find(x=>x.id===id);
+    if(found)return{t:found,k:key};
   }
   return{t:null,k};
 }
@@ -973,7 +988,7 @@ async function doToggle(id){
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});
-    if(S.team==='퍼포먼스'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
+    if(S.team!=='디자인'&&S.team!=='콘텐츠'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
   }catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
@@ -1640,12 +1655,13 @@ function tRow(t,ac,dim){
     ${ac2?`<span style="font-size:9px;background:#f5f3ef;color:${ac2};border:1px solid #e8e4de;border-radius:4px;padding:1px 6px;font-weight:700">${esc(t.area)}</span>`:''}
   </div>`:'';
 
-  // 좌측 상단: 이월 + 우선순위 + 긴급
+  // 좌측 상단: 이월 + 우선순위 + 긴급 (미완료) / 생성일 (완료)
+  const fmtCreated=iso=>{const d=new Date(new Date(iso).getTime()+9*36e5);return`${d.getUTCMonth()+1}/${d.getUTCDate()}`;};
   const topLeft=!dim?[
     t.carried&&t.dateStr?`<span style="font-size:9px;color:#b91c1c;font-weight:700">${t.dateStr.slice(5).replace('-','/')}</span>`:'',
     t.priority?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:'',
     us?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:'',
-  ].filter(Boolean).join(''):'';
+  ].filter(Boolean).join(''):(t.createdAt?`<span style="font-size:9px;color:#9b9794;font-weight:600">생성 ${fmtCreated(t.createdAt)}</span>`:'');
 
   const dzone=t._dzone||'inc';
   const cc=!dim&&t.color?CARD_COLOR_MAP[t.color]:null;
@@ -1878,7 +1894,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:3px;height:14px;border-radius:2px;background:#22c55e;display:inline-block"></span>
-          <span style="font-size:12px;font-weight:800;color:#1c1a17">완료</span>
+          <span style="font-size:12px;font-weight:800;color:#1c1a17">이번주 완료</span>
           ${dn.length?`<span style="font-size:10px;background:#22c55e18;color:#15803d;border-radius:8px;padding:2px 7px;font-weight:700">${dn.length}</span>`:''}
         </div>
         ${dn.length?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:5px;padding:3px 8px;font-size:9px;color:#9b9794;cursor:pointer">전체 삭제</button>`:''}
@@ -1904,7 +1920,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           </div>
           ${inc.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:10px;padding:2px 8px;font-weight:700">${inc.length}건 진행 중</span>`:''}
         </div>
-        ${dn.length?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">완료 ${dn.length}건 삭제</button>`:''}
+        ${dn.length?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:6px;padding:4px 10px;font-size:10px;color:#9b9794;cursor:pointer">이번주 완료 ${dn.length}건 삭제</button>`:''}
       </div>
       <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:8px">
         <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…" enterkeyhint="send"
@@ -1920,7 +1936,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           <div style="font-size:13px;color:#9b9794">이 날 등록된 업무가 없어요.</div>
         </div>`:''}
         ${inc.map(t=>tRow(t,ac,false)).join('')}
-        ${dn.length?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e8e4de"></div><span style="font-size:10px;color:#b0ada8;font-weight:700">완료 ${dn.length}건</span><div style="flex:1;height:1px;background:#e8e4de"></div></div>`:''}
+        ${dn.length?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e8e4de"></div><span style="font-size:10px;color:#b0ada8;font-weight:700">이번주 완료 ${dn.length}건</span><div style="flex:1;height:1px;background:#e8e4de"></div></div>`:''}
         ${dn.map(t=>tRow(t,ac,true)).join('')}
       </div>
     </div>
@@ -2407,7 +2423,11 @@ function render(){
   });
   let inc=tasks.filter(t=>!t.completed);
   const monthlyDoneKey=`done-${S.calYear}-${S.calMonth}-${S.user}`;
-  const dn=S.team==='퍼포먼스'?(S.tasks[monthlyDoneKey]||[]):tasks.filter(t=>t.completed);
+  const {s:_wkS,e:_wkE}=weekRange(S.selectedDate);
+  const monthly=S.tasks[monthlyDoneKey]||[];
+  const todayDone=tasks.filter(t=>t.completed);
+  const seen=new Set();
+  const dn=[...todayDone,...monthly].filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return x.dateStr&&x.dateStr>=_wkS&&x.dateStr<=_wkE;});
   // 오늘 이후 날짜: 과거 미완료 이월
   if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
     const carried=S.tasks['carried-'+S.user]||[];
@@ -2461,7 +2481,7 @@ function selTeam(t){
   render();
   if(t==='디자인'){loadDesignReqs();}
   else if(t==='콘텐츠'){loadContentReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스'){loadCarried(S.user);loadMonthlyDone(S.user);}}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(t==='퍼포먼스')loadCarried(S.user);loadMonthlyDone(S.user);}
 }
 function selUser(u){
   S.user=u;
@@ -2469,7 +2489,8 @@ function selUser(u){
   S.tasks={};render();
   loadTasksByDate(S.selectedDate,u);
   setTimeout(()=>loadSched(u),400);
-  if(S.team==='퍼포먼스'){loadCarried(u);loadMonthlyDone(u);}
+  if(S.team==='퍼포먼스')loadCarried(u);
+  loadMonthlyDone(u);
 }
 function selectDate(ds){
   S.selectedDate=ds;
@@ -2483,7 +2504,7 @@ function moveMonth(dir){
   if(S.calMonth>11){S.calMonth=0;S.calYear++;}
   if(S.calMonth<0){S.calMonth=11;S.calYear--;}
   render();loadYtEvents();
-  if(S.team==='퍼포먼스'){loadMonthlyDone(S.user);if(S.calMode==='crm'){_crmLoaded='';loadCrmEvents();}}
+  if(S.team!=='디자인'&&S.team!=='콘텐츠'){loadMonthlyDone(S.user);if(S.team==='퍼포먼스'&&S.calMode==='crm'){_crmLoaded='';loadCrmEvents();}}
 }
 function goToday(){
   const n=getKSTNow();
@@ -2496,7 +2517,7 @@ function goToday(){
 function addTask(){
   const e=document.getElementById('ti'),t=(e?.value||'').trim();
   if(!t)return;
-  e.value='';
+  e.value='';S._ti='';
   doAdd(t);
 }
 function toggle(id){doToggle(id);}
@@ -2509,7 +2530,7 @@ function refresh(){
   S.tasks={};S.sched={};render();
   if(S.team==='디자인'){S.designReqs=null;loadDesignReqs();}
   else if(S.team==='콘텐츠'){S.contentReqs=null;loadContentReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);loadMonthlyDone(S.user);}
 }
 function resetToken(){
   if(!confirm('토큰을 초기화하고 재설정 화면으로 이동할까요?'))return;
@@ -2525,7 +2546,7 @@ setTimeout(()=>gcalEnsureToken(),800);
 if(S.token){
   if(S.team==='디자인'){loadDesignReqs();}
   else if(S.team==='콘텐츠'){loadContentReqs();}
-  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);}
+  else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);loadMonthlyDone(S.user);}
 }
 </script>
 </body>
