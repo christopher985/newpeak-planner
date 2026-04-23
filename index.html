@@ -292,10 +292,23 @@ async function loadCrmEvents(){
       talkChannel:txt(p.properties['톡채널'])||'',
       spend:p.properties['지출']?.number??null,
       revenue:p.properties['매출']?.number??null,
+      // 레거시 단일 지표 (신규 입력 안 함, 읽기만)
       orders:p.properties['주문건']?.number??null,
       views:p.properties['열람수']?.number??null,
       clicks:p.properties['클릭수']?.number??null,
       cvr:p.properties['CVR']?.number??null,
+      // 스마트스토어 채널 지표
+      ss_sends:p.properties['스마트스토어_발송수']?.number??null,
+      ss_views:p.properties['스마트스토어_열람수']?.number??null,
+      ss_clicks:p.properties['스마트스토어_클릭수']?.number??null,
+      ss_orders:p.properties['스마트스토어_구매건']?.number??null,
+      ss_cvr:p.properties['스마트스토어_CVR']?.number??null,
+      // 톡채널 지표
+      tk_sends:p.properties['톡채널_발송수']?.number??null,
+      tk_views:p.properties['톡채널_열람수']?.number??null,
+      tk_clicks:p.properties['톡채널_클릭수']?.number??null,
+      tk_orders:p.properties['톡채널_구매건']?.number??null,
+      tk_cvr:p.properties['톡채널_CVR']?.number??null,
       ssSendTime:txt(p.properties['스마트스토어 발송시각'])||'',
       tkSendTime:txt(p.properties['톡채널 발송시각'])||'',
     }));
@@ -339,20 +352,29 @@ async function addCrmEvent(){
       '이름':{title:[{text:{content:title}}]},
       '날짜':{date:{start:m.date}},
     }});
-    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null,ssSendTime:'',tkSendTime:''};
+    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null,ss_sends:null,ss_views:null,ss_clicks:null,ss_orders:null,ss_cvr:null,tk_sends:null,tk_views:null,tk_clicks:null,tk_orders:null,tk_cvr:null,ssSendTime:'',tkSendTime:''};
     S.crmEvents.push(ev);
     m.items.push(ev);
     render();toast('CRM 일정 추가됨');
   }catch(e){toast('추가 실패: '+e.message,true);}
 }
 async function deleteCrmEvent(id){
-  const m=S.crmModal;if(!m)return;
   const prev=[...S.crmEvents];
+  const prevDate=S.crmModal?S.crmModal.date:null;
   S.crmEvents=S.crmEvents.filter(e=>e.id!==id);
-  m.items=m.items.filter(e=>e.id!==id);
+  if(S.crmModal)S.crmModal.items=S.crmModal.items.filter(e=>e.id!==id);
+  if(S.crmDetail&&S.crmDetail.id===id)S.crmDetail=null;
   render();
   try{await notion('PATCH','/pages/'+id,{archived:true});toast('삭제됨');}
-  catch(e){S.crmEvents=prev;m.items=prev.filter(e=>e.date===m.date);toast('삭제 실패: '+e.message,true);render();}
+  catch(e){
+    S.crmEvents=prev;
+    if(S.crmModal&&prevDate)S.crmModal.items=prev.filter(e=>e.date===prevDate);
+    toast('삭제 실패: '+e.message,true);render();
+  }
+}
+function confirmDelCrmDetail(){
+  const d=S.crmDetail;if(!d)return;
+  if(confirm(`"${d.title||'이 일정'}"을(를) 삭제할까요? 복구 불가.`))deleteCrmEvent(d.id);
 }
 async function openCrmDetail(id){
   const ev=S.crmEvents.find(e=>e.id===id);if(!ev)return;
@@ -360,24 +382,28 @@ async function openCrmDetail(id){
   try{
     const res=await notion('GET',`/blocks/${id}/children?page_size=100`);
     const blocks=res.results||[];
-    await loadBlockChildren(id,blocks);
-    // column_list 자식도 로드
-    for(const b of blocks){
-      if(b.type==='column_list'){
-        const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
-        b._children=cols.results||[];
-        for(const col of b._children){
-          const items=await notion('GET',`/blocks/${col.id}/children?page_size=20`);
-          col._children=items.results||[];
-          for(const item of col._children){
-            if(item.type==='table'&&item.has_children){
-              const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);
-              item._children=rows.results||[];
-            }
-          }
+    // 모든 자식 로딩을 병렬화 (table 자식, column_list 재귀 자식)
+    await Promise.all(blocks.map(async b=>{
+      try{
+        if(b.type==='table'&&b.has_children){
+          const r=await notion('GET',`/blocks/${b.id}/children?page_size=100`);
+          b._children=r.results||[];
+        }else if(b.type==='column_list'){
+          const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
+          b._children=cols.results||[];
+          await Promise.all(b._children.map(async col=>{
+            const items=await notion('GET',`/blocks/${col.id}/children?page_size=20`);
+            col._children=items.results||[];
+            await Promise.all(col._children.map(async item=>{
+              if(item.type==='table'&&item.has_children){
+                const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);
+                item._children=rows.results||[];
+              }
+            }));
+          }));
         }
-      }
-    }
+      }catch{b._children=b._children||[];}
+    }));
     if(S.crmDetail)S.crmDetail.blocks=blocks;
   }catch(e){if(S.crmDetail)S.crmDetail.blocks=[];}
   if(S.crmDetail){S.crmDetail.blocksLoading=false;render();}
@@ -393,6 +419,61 @@ function closeCrmDetail(){
   render();
 }
 function setCrmDetailField(f,v){if(S.crmDetail)S.crmDetail[f]=v;}
+/* ── 본문 → 속성 파서 (M3: 자동 추출) ── */
+function _rtText(b){const t=b?.type;return t&&b[t]?.rich_text?b[t].rich_text.map(r=>r.plain_text||'').join(''):'';}
+function _parseNum(s){const m=String(s||'').match(/-?[\d,]+(?:\.\d+)?/);return m?Number(m[0].replace(/,/g,'')):null;}
+function _parsePct(s){const m=String(s||'').match(/([\d.]+)\s*%/);return m?Number(m[1]):null;}
+function _parseCrmTable(tb,hint,out){
+  const rows=tb._children||[];if(rows.length<2)return;
+  const cell=(row,i)=>(row.table_row?.cells||[])[i]?.map(r=>r.plain_text||'').join('').trim()||'';
+  const headers=(rows[0].table_row?.cells||[]).map((_,i)=>cell(rows[0],i).replace(/\s+/g,''));
+  const data=(rows[1].table_row?.cells||[]).map((_,i)=>cell(rows[1],i));
+  const pfx=hint==='tk'?'tk':'ss';
+  headers.forEach((h,i)=>{
+    const v=data[i]||'';if(!v)return;
+    if(/발송수|발송$/.test(h)){const n=_parseNum(v);if(n!==null)out[pfx+'_sends']=n;}
+    else if(/열람수|열람/.test(h)){const n=_parseNum(v);if(n!==null)out[pfx+'_views']=n;}
+    else if(/클릭수|클릭/.test(h)){const n=_parseNum(v);if(n!==null)out[pfx+'_clicks']=n;}
+    else if(/구매건|구매|CVR/.test(h)){const n=_parseNum(v);const p=_parsePct(v);if(n!==null)out[pfx+'_orders']=n;if(p!==null)out[pfx+'_cvr']=p;}
+  });
+}
+function extractCrmFromBlocks(blocks){
+  const out={};
+  const walk=(arr,initHint)=>{
+    let hint=initHint;
+    for(const b of arr){
+      const rt=_rtText(b);
+      if(rt){
+        if(/스마트\s*스토어/.test(rt))hint='ss';
+        else if(/톡채널/.test(rt))hint='tk';
+        let m=rt.match(/스마트\s*스토어\s*발송\s*시각\s*[:：](.+?)$/m);
+        if(m){const v=m[1].replace(/^[\s:：]+/,'').trim();if(v)out.ssSendTime=v;}
+        m=rt.match(/톡채널\s*발송\s*시각\s*[:：](.+?)$/m);
+        if(m){const v=m[1].replace(/^[\s:：]+/,'').trim();if(v)out.tkSendTime=v;}
+        m=rt.match(/지출\s*[:：]\s*([\d,]+)/);if(m)out.spend=Number(m[1].replace(/,/g,''));
+        m=rt.match(/매출\s*[:：]\s*([\d,]+)/);if(m)out.revenue=Number(m[1].replace(/,/g,''));
+      }
+      if(b.type==='table')_parseCrmTable(b,hint,out);
+      if(b.type==='column_list'){
+        (b._children||[]).forEach(col=>walk(col._children||[],null));
+      }
+    }
+  };
+  walk(blocks||[],null);
+  return out;
+}
+function autoExtractCrmDetail(){
+  const d=S.crmDetail;if(!d)return;
+  if(!d.blocks||!d.blocks.length){toast('Notion 본문이 없음',true);return;}
+  const ex=extractCrmFromBlocks(d.blocks);
+  const keys=Object.keys(ex);
+  if(!keys.length){toast('본문에서 추출할 수치 없음',true);return;}
+  const labels={ssSendTime:'스마트스토어 발송시각',tkSendTime:'톡채널 발송시각',spend:'지출',revenue:'매출',ss_sends:'스마트스토어 발송수',ss_views:'스마트스토어 열람수',ss_clicks:'스마트스토어 클릭수',ss_orders:'스마트스토어 구매건',ss_cvr:'스마트스토어 CVR(%)',tk_sends:'톡채널 발송수',tk_views:'톡채널 열람수',tk_clicks:'톡채널 클릭수',tk_orders:'톡채널 구매건',tk_cvr:'톡채널 CVR(%)'};
+  const lines=keys.map(k=>`• ${labels[k]||k}: ${ex[k]}`).join('\n');
+  if(!confirm(`본문에서 다음 값을 추출했습니다.\n적용 후 '저장'을 눌러야 Notion에 반영됩니다.\n\n${lines}\n\n적용할까요?`))return;
+  Object.assign(d,ex);render();
+  toast('추출 완료 — 확인 후 저장하세요');
+}
 async function saveCrmDetail(){
   const d=S.crmDetail;if(!d)return;
   if(!d.title.trim()){toast('제목을 입력해주세요',true);return;}
@@ -403,6 +484,7 @@ async function saveCrmDetail(){
   if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
   S.crmDetail=null;render();
   try{
+    const numProp=v=>({number:v!==null&&v!==undefined&&v!==''?Number(v):null});
     const props={
       '이름':{title:[{text:{content:d.title.trim()}}]},
       'CRM문구':{rich_text:d.crmText?[{text:{content:d.crmText}}]:[]},
@@ -410,12 +492,20 @@ async function saveCrmDetail(){
       '톡채널':{rich_text:d.talkChannel?[{text:{content:d.talkChannel}}]:[]},
       '스마트스토어 발송시각':{rich_text:d.ssSendTime?[{text:{content:d.ssSendTime}}]:[]},
       '톡채널 발송시각':{rich_text:d.tkSendTime?[{text:{content:d.tkSendTime}}]:[]},
-      '지출':{number:d.spend!==null&&d.spend!==''?Number(d.spend):null},
-      '매출':{number:d.revenue!==null&&d.revenue!==''?Number(d.revenue):null},
-      '주문건':{number:d.orders!==null&&d.orders!==''?Number(d.orders):null},
-      '열람수':{number:d.views!==null&&d.views!==''?Number(d.views):null},
-      '클릭수':{number:d.clicks!==null&&d.clicks!==''?Number(d.clicks):null},
-      'CVR':{number:d.cvr!==null&&d.cvr!==''?Number(d.cvr):null},
+      '지출':numProp(d.spend),
+      '매출':numProp(d.revenue),
+      // 스마트스토어 채널 지표
+      '스마트스토어_발송수':numProp(d.ss_sends),
+      '스마트스토어_열람수':numProp(d.ss_views),
+      '스마트스토어_클릭수':numProp(d.ss_clicks),
+      '스마트스토어_구매건':numProp(d.ss_orders),
+      '스마트스토어_CVR':numProp(d.ss_cvr),
+      // 톡채널 지표
+      '톡채널_발송수':numProp(d.tk_sends),
+      '톡채널_열람수':numProp(d.tk_views),
+      '톡채널_클릭수':numProp(d.tk_clicks),
+      '톡채널_구매건':numProp(d.tk_orders),
+      '톡채널_CVR':numProp(d.tk_cvr),
     };
     await notion('PATCH','/pages/'+d.id,{properties:props});
     toast('저장됨');
@@ -908,7 +998,7 @@ function renderBlock(b){
   }).join('')}</table></div>`;}
   if(t==='toggle'){const rt=b.toggle.rich_text.map(r=>renderRichText(r)).join('');return`<details style="margin:4px 0;font-size:12px"><summary style="font-weight:700;color:#2563eb;cursor:pointer">${rt}</summary></details>`;}
   if(t==='divider')return`<hr style="border:none;border-top:1px solid #e8e4de;margin:8px 0"/>`;
-  if(t==='image'){const url=b.image?.file?.url||b.image?.external?.url||'';return url?`<img src="${esc(url)}" style="max-width:100%;border-radius:6px;margin:6px 0"/>`:'';}
+  if(t==='image'){const url=b.image?.file?.url||b.image?.external?.url||'';return url?`<img src="${esc(url)}" loading="lazy" decoding="async" style="max-width:100%;border-radius:6px;margin:6px 0"/>`:'';}
   if(t==='column_list'){return`<div style="display:flex;gap:12px;margin:6px 0;flex-wrap:wrap">${(b._children||[]).map(col=>
     `<div style="flex:1;min-width:180px">${(col._children||[]).map(item=>renderBlock(item)).join('')}</div>`
   ).join('')}</div>`;}
@@ -1174,53 +1264,60 @@ function rCrmDetailModal(){
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
         ${d.blocksLoading?`<div style="display:flex;align-items:center;justify-content:center;padding:16px;gap:8px"><div class="sp"></div><span style="font-size:11px;color:#9b9794">본문 불러오는 중…</span></div>`
         :d.blocks&&d.blocks.length?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:12px;margin-bottom:4px">
-          <div style="font-size:10px;font-weight:700;color:#ef4444;margin-bottom:8px;letter-spacing:.5px">Notion 본문</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+            <div style="font-size:10px;font-weight:700;color:#ef4444;letter-spacing:.5px">Notion 본문</div>
+            <button onclick="autoExtractCrmDetail()" title="본문에서 발송시각·성과지표를 하단 필드로 추출" style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;color:#ef4444;cursor:pointer;white-space:nowrap">↓ 본문에서 자동 추출</button>
+          </div>
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
         ${txtField('CRM문구','crmText','CRM 발송 문구…')}
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">발송 채널</div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">발송 채널 및 성과</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div style="flex:1;min-width:160px;background:${d.smartStore||d.ssSendTime?'#f0fdf4':'#f9f8f6'};border:1px solid ${d.smartStore||d.ssSendTime?'#bbf7d0':'#e8e4de'};border-radius:8px;padding:10px">
-              <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
-                <span style="width:8px;height:8px;border-radius:50%;background:${d.smartStore||d.ssSendTime?'#22c55e':'#d1d5db'}"></span>
-                <span style="font-size:10px;font-weight:700;color:${d.smartStore||d.ssSendTime?'#15803d':'#9b9794'}">스마트스토어</span>
-              </div>
-              <input value="${esc(d.ssSendTime)}" oninput="setCrmDetailField('ssSendTime',this.value)" placeholder="발송시각 (예: 19:55)"
-                style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
-              <textarea oninput="setCrmDetailField('smartStore',this.value)" placeholder="메모…"
-                style="width:100%;min-height:36px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit">${esc(d.smartStore||'')}</textarea>
-            </div>
-            <div style="flex:1;min-width:160px;background:${d.talkChannel||d.tkSendTime?'#eff6ff':'#f9f8f6'};border:1px solid ${d.talkChannel||d.tkSendTime?'#bfdbfe':'#e8e4de'};border-radius:8px;padding:10px">
-              <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
-                <span style="width:8px;height:8px;border-radius:50%;background:${d.talkChannel||d.tkSendTime?'#3b82f6':'#d1d5db'}"></span>
-                <span style="font-size:10px;font-weight:700;color:${d.talkChannel||d.tkSendTime?'#1d4ed8':'#9b9794'}">톡채널</span>
-              </div>
-              <input value="${esc(d.tkSendTime)}" oninput="setCrmDetailField('tkSendTime',this.value)" placeholder="발송시각 (예: 20:00)"
-                style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
-              <textarea oninput="setCrmDetailField('talkChannel',this.value)" placeholder="메모…"
-                style="width:100%;min-height:36px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit">${esc(d.talkChannel||'')}</textarea>
-            </div>
+            ${[
+              {ch:'ss',name:'스마트스토어',bg:'#f0fdf4',bd:'#bbf7d0',dot:'#22c55e',txt:'#15803d',memoF:'smartStore',timeF:'ssSendTime',ph:'19:55',fields:['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr']},
+              {ch:'tk',name:'톡채널',bg:'#eff6ff',bd:'#bfdbfe',dot:'#3b82f6',txt:'#1d4ed8',memoF:'talkChannel',timeF:'tkSendTime',ph:'20:00',fields:['tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr']}
+            ].map(c=>{
+              const act=d[c.memoF]||d[c.timeF]||c.fields.some(f=>d[f]!==null&&d[f]!==undefined&&d[f]!=='');
+              return `<div style="flex:1;min-width:220px;background:${act?c.bg:'#f9f8f6'};border:1px solid ${act?c.bd:'#e8e4de'};border-radius:8px;padding:10px">
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="width:8px;height:8px;border-radius:50%;background:${act?c.dot:'#d1d5db'}"></span>
+                  <span style="font-size:10px;font-weight:700;color:${act?c.txt:'#9b9794'}">${c.name}</span>
+                </div>
+                <input value="${esc(d[c.timeF]||'')}" oninput="setCrmDetailField('${c.timeF}',this.value)" placeholder="발송시각 (예: ${c.ph})"
+                  style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
+                <textarea oninput="setCrmDetailField('${c.memoF}',this.value)" placeholder="메모…"
+                  style="width:100%;min-height:32px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;margin-bottom:6px">${esc(d[c.memoF]||'')}</textarea>
+                <table style="width:100%;border-collapse:collapse;font-size:10px;text-align:center;background:#fff;border-radius:5px;overflow:hidden">
+                  <tr style="background:#f9f8f6">${['발송','열람','클릭','구매','CVR'].map(h=>`<th style="border:1px solid #e8e4de;padding:4px 2px;font-weight:700;color:#9b9794;font-size:9px">${h}</th>`).join('')}</tr>
+                  <tr>${c.fields.map((f,i)=>`<td style="border:1px solid #e8e4de;padding:3px 2px"><input type="number"${i===4?' step="0.01"':''} value="${d[f]??''}" oninput="setCrmDetailField('${f}',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:10px;color:#1c1a17;outline:none"/></td>`).join('')}</tr>
+                </table>
+              </div>`;
+            }).join('')}
           </div>
         </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">성과 지표</div>
-          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;text-align:center">
-            <tr style="background:#f9f8f6">${['지출','매출','주문건','열람수','클릭수','CVR'].map(h=>`<th style="border:1px solid #e8e4de;padding:5px 4px;font-weight:700;color:#9b9794;font-size:9px;white-space:nowrap">${h}</th>`).join('')}</tr>
-            <tr>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" value="${d.spend??''}" oninput="setCrmDetailField('spend',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" value="${d.revenue??''}" oninput="setCrmDetailField('revenue',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" value="${d.orders??''}" oninput="setCrmDetailField('orders',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" value="${d.views??''}" oninput="setCrmDetailField('views',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" value="${d.clicks??''}" oninput="setCrmDetailField('clicks',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-              <td style="border:1px solid #e8e4de;padding:4px 2px"><input type="number" step="0.01" value="${d.cvr??''}" oninput="setCrmDetailField('cvr',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:11px;color:#1c1a17;outline:none"/></td>
-            </tr>
-          </table></div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">공통 (합계)</div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">지출</div>
+              <input type="number" value="${d.spend??''}" oninput="setCrmDetailField('spend',this.value===''?null:Number(this.value))"
+                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">매출</div>
+              <input type="number" value="${d.revenue??''}" oninput="setCrmDetailField('revenue',this.value===''?null:Number(this.value))"
+                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
+            </div>
+          </div>
         </div>
       </div>
-      <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:flex-end;gap:8px">
-        <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
-        <button onclick="saveCrmDetail()" style="background:#ef4444;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+      <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <button onclick="confirmDelCrmDetail()" style="background:none;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;color:#ef4444;cursor:pointer">삭제</button>
+        <div style="display:flex;gap:8px">
+          <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
+          <button onclick="saveCrmDetail()" style="background:#ef4444;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>
+        </div>
       </div>
     </div>
   </div>`;

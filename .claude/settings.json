@@ -1,3 +1,55 @@
 {
-  "defaultMode": "autoApprove"
+  "defaultMode": "autoApprove",
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Google_Calendar__get_event",
+      "WebFetch",
+      "WebSearch",
+      "mcp__*",
+      "TodoWrite",
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Skill",
+      "NotebookEdit",
+      "ExitPlanMode",
+      "ToolSearch",
+      "ScheduleWakeup",
+      "Write(//c/Users/USER/.claude/**)",
+      "Edit(//c/Users/USER/.claude/**)",
+      "Read(//c/Users/USER/.claude/**)",
+      "Bash(rm:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:/Users/USER/Desktop/ToDo/newpeak/.claude/hooks/auto-stage.mjs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:/Users/USER/Desktop/ToDo/newpeak/.claude/hooks/auto-commit.mjs"
+          }
+        ]
+      }
+    ]
+  }
 }
