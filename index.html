@@ -354,19 +354,34 @@ async function saveCrmEdit(){
     toast('수정됨');
   }catch(e){if(prev)prev.title=oldTitle;toast('수정 실패: '+e.message,true);render();}
 }
+function _crmCalloutTemplate(){
+  const para=t=>({object:'block',type:'paragraph',paragraph:{rich_text:t?[{type:'text',text:{content:t}}]:[]}});
+  const callout=(emoji,title,lines)=>({object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:`${emoji} ${title}`}}],icon:{type:'emoji',emoji},color:'gray_background',children:lines.map(para)}});
+  return[
+    callout('📷','이미지',['']),
+    callout('📝','CRM문구',['']),
+    callout('🛒','스마트스토어',['발송시각: (예: 19:55)','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: (단위 % 숫자만 — 예: 41)']),
+    callout('💬','카카오톡채널',['발송시각: (예: 20:00)','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: (단위 % 숫자만 — 예: 5)']),
+    callout('💰','성과',['지출: (원 단위 숫자만)','매출: (원 단위 숫자만)']),
+  ];
+}
 async function addCrmEvent(){
   const m=S.crmModal;if(!m||!m.addTitle.trim()){toast('제목을 입력해주세요',true);return;}
   const title=m.addTitle.trim();
   m.addTitle='';render();
   try{
-    const res=await notion('POST','/pages',{parent:{database_id:CRM_DB},properties:{
-      '이름':{title:[{text:{content:title}}]},
-      '날짜':{date:{start:m.date}},
-    }});
-    const ev={id:res.id,title,date:m.date,crmText:'',smartStore:'',talkChannel:'',spend:null,revenue:null,orders:null,views:null,clicks:null,cvr:null,ss_sends:null,ss_views:null,ss_clicks:null,ss_orders:null,ss_cvr:null,tk_sends:null,tk_views:null,tk_clicks:null,tk_orders:null,tk_cvr:null,ssSendTime:'',tkSendTime:''};
+    const res=await notion('POST','/pages',{
+      parent:{database_id:CRM_DB},
+      properties:{
+        '이름':{title:[{text:{content:title}}]},
+        '날짜':{date:{start:m.date}},
+      },
+      children:_crmCalloutTemplate(),
+    });
+    const ev={id:res.id,title,date:m.date,crmText:'',spend:null,revenue:null,ss_sends:null,ss_views:null,ss_clicks:null,ss_orders:null,ss_cvr:null,tk_sends:null,tk_views:null,tk_clicks:null,tk_orders:null,tk_cvr:null,ssSendTime:'',tkSendTime:''};
     S.crmEvents.push(ev);
     m.items.push(ev);
-    render();toast('CRM 일정 추가됨');
+    render();toast('CRM 일정 추가됨 — Notion에서 콜아웃 채워주세요');
   }catch(e){toast('추가 실패: '+e.message,true);}
 }
 async function deleteCrmEvent(id){
@@ -507,24 +522,28 @@ function _isMultiCalloutSection(b){
   if(/성과|지출|매출/.test(t))return 'perf';
   return null;
 }
-function _parseChannelCallout(callout,prefix,out){
+function _calloutAllLines(callout){
+  // 콜아웃 자체 rich_text (Shift+Enter \n 포함) + paragraph 자식 라인 모두 합쳐 반환
+  const selfText=_rtText(callout)||'';
+  const selfLines=selfText.split(/\r?\n/);
   const children=callout._children||[];
-  for(const c of children){
-    const line=_rtText(c);if(!line)continue;
+  const childLines=children.map(c=>_rtText(c)||'').filter(Boolean);
+  return [...selfLines,...childLines].filter(Boolean);
+}
+function _parseChannelCallout(callout,prefix,out){
+  for(const line of _calloutAllLines(callout)){
     let m;
-    if((m=line.match(/^\s*send\s*[:：]\s*(.+?)\s*$/i))){out[prefix==='ss'?'ssSendTime':'tkSendTime']=m[1].trim();continue;}
-    if((m=line.match(/^\s*sends\s*[:：]\s*([\d,]+)/i))){out[prefix+'_sends']=Number(m[1].replace(/,/g,''));continue;}
-    if((m=line.match(/^\s*views\s*[:：]\s*([\d,]+)/i))){out[prefix+'_views']=Number(m[1].replace(/,/g,''));continue;}
-    if((m=line.match(/^\s*clicks\s*[:：]\s*([\d,]+)/i))){out[prefix+'_clicks']=Number(m[1].replace(/,/g,''));continue;}
-    if((m=line.match(/^\s*orders\s*[:：]\s*([\d,]+)/i))){out[prefix+'_orders']=Number(m[1].replace(/,/g,''));continue;}
-    if((m=line.match(/^\s*cvr\s*[:：]\s*([\d.]+)/i))){out[prefix+'_cvr']=Number(m[1]);continue;}
+    if((m=line.match(/^\s*(?:send|발송\s*시각)\s*[:：]\s*(.+?)\s*$/i))){out[prefix==='ss'?'ssSendTime':'tkSendTime']=m[1].trim();continue;}
+    if((m=line.match(/^\s*(?:sends|발송수|발송)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_sends']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*(?:views|열람수|열람)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_views']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*(?:clicks|클릭수|클릭)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_clicks']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*(?:orders|구매건|구매)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_orders']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*(?:cvr|CVR)\s*[:：]\s*([\d.]+)/i))){out[prefix+'_cvr']=Number(m[1]);continue;}
     if(/[발열클구][송람릭매]|sends?|views?|clicks?|orders?/i.test(line)&&line.includes('=')){_parseCompactRow(line,prefix+'_',out);continue;}
   }
 }
 function _parsePerfCallout(callout,out){
-  const children=callout._children||[];
-  for(const c of children){
-    const line=_rtText(c);if(!line)continue;
+  for(const line of _calloutAllLines(callout)){
     let m;
     if((m=line.match(/^\s*spend\s*[:：]\s*([\d,]+)/i))){out.spend=Number(m[1].replace(/,/g,''));continue;}
     if((m=line.match(/^\s*revenue\s*[:：]\s*([\d,]+)/i))){out.revenue=Number(m[1].replace(/,/g,''));continue;}
@@ -534,10 +553,11 @@ function _parsePerfCallout(callout,out){
   }
 }
 function _parseCrmTextCallout(callout,out){
-  const children=callout._children||[];
-  const texts=[];
-  for(const c of children){const line=_rtText(c);if(line)texts.push(line);}
-  if(texts.length)out.crmText=texts.join('\n');
+  // 첫 줄 (콜아웃 제목) 제외하고 나머지를 카피로 인식
+  const lines=_calloutAllLines(callout);
+  if(lines.length<=1){out.crmText='';return;}
+  const body=lines.slice(1).filter(l=>!/^📝|문구|카피/i.test(l)); // 제목 라인 잡혔으면 제거
+  if(body.length)out.crmText=body.join('\n');
 }
 function extractCrmFromMultiCallouts(blocks){
   const out={};let found=false;
