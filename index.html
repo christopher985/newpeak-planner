@@ -436,7 +436,22 @@ async function openCrmDetail(id){
         }
       }catch{b._children=b._children||[];}
     }));
-    if(S.crmDetail)S.crmDetail.blocks=blocks;
+    if(S.crmDetail){
+      S.crmDetail.blocks=blocks;
+      // 콜아웃 섹션별 self block ID 매핑 (저장 시 archive + append 위해)
+      const ids={ss:null,tk:null,perf:null,crmText:null,image:null};
+      const lastId=blocks.length?blocks[blocks.length-1].id:null;
+      const findCalloutIds=arr=>{
+        for(const b of arr){
+          const sec=_isMultiCalloutSection(b);
+          if(sec&&!ids[sec])ids[sec]=b.id;
+          if(b.type==='column_list')(b._children||[]).forEach(col=>findCalloutIds(col._children||[]));
+        }
+      };
+      findCalloutIds(blocks);
+      S.crmDetail.calloutIds=ids;
+      S.crmDetail.lastBlockId=lastId;
+    }
   }catch(e){if(S.crmDetail)S.crmDetail.blocks=[];}
   if(S.crmDetail){S.crmDetail.blocksLoading=false;render();}
   if(S.crmDetail)syncCrmFromBlocks(S.crmDetail);
@@ -875,20 +890,55 @@ function autoExtractCrmDetail(){
   Object.assign(d,ex);render();
   toast('추출 완료 — 확인 후 저장하세요');
 }
+function _buildChannelCallout(emoji,title,prefix,sendField,d){
+  const para=t=>({object:'block',type:'paragraph',paragraph:{rich_text:t?[{type:'text',text:{content:t}}]:[]}});
+  const lines=[];
+  if(d[sendField])lines.push(`발송시각: ${d[sendField]}`);else lines.push('발송시각: ');
+  const fields=[[`${prefix}_sends`,'발송수'],[`${prefix}_views`,'열람수'],[`${prefix}_clicks`,'클릭수'],[`${prefix}_orders`,'구매건'],[`${prefix}_cvr`,'CVR']];
+  fields.forEach(([k,label])=>{const v=d[k];lines.push(`${label}: ${v!=null&&v!==''?v:''}`);});
+  return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:`${emoji} ${title}`}}],icon:{type:'emoji',emoji},color:'gray_background',children:lines.map(para)}};
+}
+function _buildPerfCallout(d){
+  const para=t=>({object:'block',type:'paragraph',paragraph:{rich_text:t?[{type:'text',text:{content:t}}]:[]}});
+  const lines=[`지출: ${d.spend!=null&&d.spend!==''?d.spend:''}`,`매출: ${d.revenue!=null&&d.revenue!==''?d.revenue:''}`];
+  return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'💰 성과'}}],icon:{type:'emoji',emoji:'💰'},color:'gray_background',children:lines.map(para)}};
+}
+function _buildCrmTextCallout(d){
+  const para=t=>({object:'block',type:'paragraph',paragraph:{rich_text:t?[{type:'text',text:{content:t}}]:[]}});
+  const text=(d.crmText||'').toString();
+  const lines=text?text.split(/\r?\n/):[''];
+  return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📝 CRM문구'}}],icon:{type:'emoji',emoji:'📝'},color:'gray_background',children:lines.map(para)}};
+}
 async function saveCrmDetail(){
   const d=S.crmDetail;if(!d)return;
   if(!d.title.trim()){toast('제목을 입력해주세요',true);return;}
   const ev=S.crmEvents.find(e=>e.id===d.id);
   const prev=ev?{...ev}:null;
   if(ev)Object.assign(ev,d);
-  // crmModal items도 동기화
   if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
+  const ids=d.calloutIds||{ss:null,tk:null,perf:null,crmText:null,image:null};
+  const lastId=d.lastBlockId||null;
   S.crmDetail=null;render();
   try{
-    // 모든 데이터는 본문 콜아웃 단일 소스 — 속성에는 이름·날짜만 존재
-    const props={'이름':{title:[{text:{content:d.title.trim()}}]}};
-    await notion('PATCH','/pages/'+d.id,{properties:props});
-    toast('저장됨');
+    // 1. 이름 PATCH
+    await notion('PATCH','/pages/'+d.id,{properties:{'이름':{title:[{text:{content:d.title.trim()}}]}}});
+    // 2. 채널/성과/CRM문구 콜아웃 archive (이미지 콜아웃은 손대지 않음)
+    const archiveTargets=[ids.ss,ids.tk,ids.perf,ids.crmText].filter(Boolean);
+    for(const bid of archiveTargets){
+      try{await notion('PATCH','/blocks/'+bid,{archived:true});}catch{}
+    }
+    // 3. 새 콜아웃 build (입력값 기반)
+    const newCallouts=[
+      _buildCrmTextCallout(d),
+      _buildChannelCallout('🛒','스마트스토어','ss','ssSendTime',d),
+      _buildChannelCallout('💬','카카오톡채널','tk','tkSendTime',d),
+      _buildPerfCallout(d),
+    ];
+    // 4. append (가능하면 lastId 다음에 추가하여 위치 자연스럽게)
+    const payload={children:newCallouts};
+    if(lastId&&!archiveTargets.includes(lastId))payload.after=lastId;
+    await notion('PATCH','/blocks/'+d.id+'/children',payload);
+    toast('저장됨 (Notion 본문 콜아웃 갱신)');
   }catch(e){
     if(ev&&prev)Object.assign(ev,prev);
     toast('저장 실패: '+e.message,true);render();
@@ -1462,7 +1512,14 @@ async function doToggle(id){
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv},'완료시점':nv?{date:{start:t.completedAt}}:{date:null}}});
-    if(S.team!=='디자인'&&S.team!=='콘텐츠'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
+    if(S.team!=='디자인'&&S.team!=='콘텐츠'){
+      delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);
+      // 완료 → 미완료 되돌리기: 카드가 과거 날짜라면 carried 캐시 재로드 필요 (미래 selectedDate 의 carried 섹션에 노출)
+      if(!nv&&S.team==='퍼포먼스'){
+        delete S.tasks[`carried-${S.user}`];
+        loadCarried(S.user);
+      }
+    }
   }catch(e){t.completed=!nv;t.completedAt=prevCompletedAt;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
@@ -1680,7 +1737,10 @@ function rCrmDetailModal(){
               onfocus="this.style.borderBottomColor='#ef4444'" onblur="this.style.borderBottomColor='transparent'"/>
             <div style="font-size:11px;color:#9b9794;margin-top:4px">${d.date}</div>
           </div>
-          <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <a href="https://www.notion.so/${d.id.replace(/-/g,'')}" target="_blank" rel="noopener" title="Notion 에서 열기 (이미지 첨부·세부 편집)" style="background:#fff;border:1px solid #e8e4de;border-radius:6px;padding:5px 10px;font-size:10px;font-weight:700;color:#6b6762;cursor:pointer;text-decoration:none;line-height:1;white-space:nowrap">🔗 Notion</a>
+            <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
+          </div>
         </div>
       </div>
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
@@ -1693,48 +1753,46 @@ function rCrmDetailModal(){
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
         <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <div style="font-size:10px;font-weight:700;color:#9b9794;letter-spacing:.5px">📝 CRM문구</div>
-            <span style="font-size:9px;color:#9b9794">읽기 전용 · 본문 📝 문구 콜아웃에서 자동 갱신</span>
-          </div>
-          <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:${d.crmText?'#1c1a17':'#9b9794'};min-height:50px;white-space:pre-wrap">${d.crmText?esc(d.crmText):'본문에 📝 CRM문구 콜아웃을 만들어 카피를 작성하세요.'}</div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📝 CRM문구</div>
+          <textarea oninput="setCrmDetailField('crmText',this.value)" placeholder="CRM 발송 문구 (저장 시 본문 📝 콜아웃에 반영)"
+            style="width:100%;min-height:60px;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:#1c1a17;outline:none;resize:vertical;font-family:inherit"
+            onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'">${esc(d.crmText||'')}</textarea>
         </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
-            <div style="font-size:10px;font-weight:700;color:#9b9794;letter-spacing:.5px">발송 채널 및 성과</div>
-            <span style="font-size:9px;color:#9b9794">읽기 전용 · 본문 콜아웃에서 자동 갱신</span>
-          </div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">발송 채널 및 성과</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${[
-              {ch:'ss',name:'스마트스토어',bg:'#f0fdf4',bd:'#bbf7d0',dot:'#22c55e',txt:'#15803d',timeF:'ssSendTime',fields:['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr']},
-              {ch:'tk',name:'톡채널',bg:'#eff6ff',bd:'#bfdbfe',dot:'#3b82f6',txt:'#1d4ed8',timeF:'tkSendTime',fields:['tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr']}
+              {ch:'ss',name:'스마트스토어',bg:'#f0fdf4',bd:'#bbf7d0',dot:'#22c55e',txt:'#15803d',timeF:'ssSendTime',ph:'19:55',fields:['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr']},
+              {ch:'tk',name:'톡채널',bg:'#eff6ff',bd:'#bfdbfe',dot:'#3b82f6',txt:'#1d4ed8',timeF:'tkSendTime',ph:'20:00',fields:['tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr']}
             ].map(c=>{
               const act=d[c.timeF]||c.fields.some(f=>d[f]!==null&&d[f]!==undefined&&d[f]!=='');
-              const dispVal=v=>(v!==null&&v!==undefined&&v!=='')?String(v):'—';
               return `<div style="flex:1;min-width:220px;background:${act?c.bg:'#f9f8f6'};border:1px solid ${act?c.bd:'#e8e4de'};border-radius:8px;padding:10px">
                 <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
                   <span style="width:8px;height:8px;border-radius:50%;background:${act?c.dot:'#d1d5db'}"></span>
                   <span style="font-size:10px;font-weight:700;color:${act?c.txt:'#9b9794'}">${c.name}</span>
-                  <span style="font-size:9px;color:#9b9794;margin-left:auto">발송시각 ${esc(dispVal(d[c.timeF]))}</span>
                 </div>
+                <input value="${esc(d[c.timeF]||'')}" oninput="setCrmDetailField('${c.timeF}',this.value)" placeholder="발송시각 (예: ${c.ph})"
+                  style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:6px"/>
                 <table style="width:100%;border-collapse:collapse;font-size:10px;text-align:center;background:#fff;border-radius:5px;overflow:hidden">
                   <tr style="background:#f9f8f6">${['발송','열람','클릭','구매','CVR'].map(h=>`<th style="border:1px solid #e8e4de;padding:4px 2px;font-weight:700;color:#9b9794;font-size:9px">${h}</th>`).join('')}</tr>
-                  <tr>${c.fields.map(f=>`<td style="border:1px solid #e8e4de;padding:5px 2px;color:#1c1a17;font-size:11px;font-weight:600">${esc(dispVal(d[f]))}</td>`).join('')}</tr>
+                  <tr>${c.fields.map((f,i)=>`<td style="border:1px solid #e8e4de;padding:3px 2px"><input type="number"${i===4?' step="0.01"':''} value="${d[f]??''}" oninput="setCrmDetailField('${f}',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:10px;color:#1c1a17;outline:none"/></td>`).join('')}</tr>
                 </table>
               </div>`;
             }).join('')}
           </div>
         </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">공통 (합계) · 읽기 전용</div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">💰 성과</div>
           <div style="display:flex;gap:8px">
             <div style="flex:1">
-              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">지출</div>
-              <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;text-align:right;font-weight:600">${d.spend!==null&&d.spend!==undefined&&d.spend!==''?Number(d.spend).toLocaleString():'—'}</div>
+              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">지출 (원)</div>
+              <input type="number" value="${d.spend??''}" oninput="setCrmDetailField('spend',this.value===''?null:Number(this.value))"
+                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
             </div>
             <div style="flex:1">
-              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">매출</div>
-              <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;text-align:right;font-weight:600">${d.revenue!==null&&d.revenue!==undefined&&d.revenue!==''?Number(d.revenue).toLocaleString():'—'}</div>
+              <div style="font-size:9px;color:#9b9794;margin-bottom:3px">매출 (원)</div>
+              <input type="number" value="${d.revenue??''}" oninput="setCrmDetailField('revenue',this.value===''?null:Number(this.value))"
+                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
             </div>
           </div>
         </div>
