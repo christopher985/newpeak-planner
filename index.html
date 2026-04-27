@@ -362,15 +362,18 @@ function _crmCalloutTemplate(){
   return[
     callout('📷','이미지',['']),
     callout('📝','CRM문구',['']),
-    callout('🛒','스마트스토어',['발송시각: (예: 19:55)','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: (단위 % 숫자만 — 예: 41)']),
-    callout('💬','카카오톡채널',['발송시각: (예: 20:00)','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: (단위 % 숫자만 — 예: 5)']),
-    callout('💰','성과',['지출: (원 단위 숫자만)','매출: (원 단위 숫자만)']),
+    callout('🛒','스마트스토어',['발송시각: ','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: ']),
+    callout('💬','카카오톡채널',['발송시각: ','발송수: ','열람수: ','클릭수: ','구매건: ','CVR: ']),
+    callout('💰','성과',['지출: ','매출: ']),
   ];
 }
+let _addCrmLock=false;
 async function addCrmEvent(){
+  if(_addCrmLock){toast('추가 중입니다',true);return;}
   const m=S.crmModal;if(!m||!m.addTitle.trim()){toast('제목을 입력해주세요',true);return;}
   const title=m.addTitle.trim();
   m.addTitle='';render();
+  _addCrmLock=true;
   try{
     const res=await notion('POST','/pages',{
       parent:{database_id:CRM_DB},
@@ -385,8 +388,12 @@ async function addCrmEvent(){
     m.items.push(ev);
     render();toast('CRM 일정 추가됨 — Notion에서 콜아웃 채워주세요');
   }catch(e){toast('추가 실패: '+e.message,true);}
+  finally{_addCrmLock=false;}
 }
+const _delCrmLocks=new Set();
 async function deleteCrmEvent(id){
+  if(_delCrmLocks.has(id))return; // 동일 카드 중복 삭제 차단
+  _delCrmLocks.add(id);
   const prev=[...S.crmEvents];
   const prevDate=S.crmModal?S.crmModal.date:null;
   S.crmEvents=S.crmEvents.filter(e=>e.id!==id);
@@ -399,6 +406,7 @@ async function deleteCrmEvent(id){
     if(S.crmModal&&prevDate)S.crmModal.items=prev.filter(e=>e.date===prevDate);
     toast('삭제 실패: '+e.message,true);render();
   }
+  finally{_delCrmLocks.delete(id);}
 }
 function confirmDelCrmDetail(){
   const d=S.crmDetail;if(!d)return;
@@ -550,7 +558,7 @@ function _calloutAllLines(callout){
 function _parseChannelCallout(callout,prefix,out){
   for(const line of _calloutAllLines(callout)){
     let m;
-    if((m=line.match(/^\s*(?:send|발송\s*시각)\s*[:：]\s*(.+?)\s*$/i))){out[prefix==='ss'?'ssSendTime':'tkSendTime']=m[1].trim();continue;}
+    if((m=line.match(/^\s*(?:send|발송\s*시각)\s*[:：]\s*(.+?)\s*$/i))){const v=m[1].trim();if(v&&!/^\(/.test(v))out[prefix==='ss'?'ssSendTime':'tkSendTime']=v;continue;}
     if((m=line.match(/^\s*(?:sends|발송수|발송)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_sends']=Number(m[1].replace(/,/g,''));continue;}
     if((m=line.match(/^\s*(?:views|열람수|열람)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_views']=Number(m[1].replace(/,/g,''));continue;}
     if((m=line.match(/^\s*(?:clicks|클릭수|클릭)\s*[:：]\s*([\d,]+)/i))){out[prefix+'_clicks']=Number(m[1].replace(/,/g,''));continue;}
@@ -645,252 +653,6 @@ function syncCrmFromBlocks(d){
   if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,ex);}
   if(S.crmDetail&&S.crmDetail.id===d.id)render();
 }
-async function migrateCrmToCallout(opts){
-  opts=opts||{};
-  const dryRun=!!opts.dryRun;
-  if(!S.token){alert('Notion 토큰 없음 — 먼저 로그인하세요');return;}
-  console.log('▶ CRM 카드 → 콜아웃 역이주 시작'+(dryRun?' (DRY RUN — 실제 변경 없음)':''));
-  let cursor=null,pages=[];
-  try{
-    do{
-      const body={page_size:100};if(cursor)body.start_cursor=cursor;
-      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
-      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
-    }while(cursor);
-  }catch(e){console.error('DB query 실패',e);alert('DB query 실패: '+e.message);return;}
-  console.log(`전체 카드 ${pages.length}건`);
-  let applied=0,skipped=0,empty=0,failed=0;const failures=[];
-  for(let i=0;i<pages.length;i++){
-    const p=pages[i];const pid=p.id;const props=p.properties;
-    const txt=k=>props[k]?.rich_text?.map(r=>r.plain_text||'').join('').trim()||null;
-    const num=k=>(props[k]?.number??null);
-    const data={};
-    const ss=txt('스마트스토어 발송시각');if(ss)data.ssSendTime=ss;
-    const tt=txt('톡채널 발송시각');if(tt)data.tkSendTime=tt;
-    const sp=num('지출');if(sp!=null)data.spend=sp;
-    const rv=num('매출');if(rv!=null)data.revenue=rv;
-    [['스마트스토어_발송수','ss_sends'],['스마트스토어_열람수','ss_views'],['스마트스토어_클릭수','ss_clicks'],['스마트스토어_구매건','ss_orders'],['스마트스토어_CVR','ss_cvr'],['톡채널_발송수','tk_sends'],['톡채널_열람수','tk_views'],['톡채널_클릭수','tk_clicks'],['톡채널_구매건','tk_orders'],['톡채널_CVR','tk_cvr']].forEach(([k,o])=>{const v=num(k);if(v!=null)data[o]=v;});
-    if(!Object.keys(data).length){empty++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 빈 카드 (skip)`);continue;}
-    try{
-      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
-      const blocks=r.results||[];
-      const hasCallout=blocks.some(b=>{
-        if(b.type!=='callout')return false;
-        const t=(b.callout?.rich_text||[]).map(rt=>rt.plain_text||'').join('');
-        return /CRM\s*데이터|데이터/i.test(t);
-      });
-      if(hasCallout){skipped++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 이미 콜아웃 존재 (skip)`);continue;}
-      const lines=[];
-      if(data.ssSendTime)lines.push(`ss_send: ${data.ssSendTime}`);
-      if(data.tkSendTime)lines.push(`tk_send: ${data.tkSendTime}`);
-      ['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr','tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr','spend','revenue'].forEach(k=>{if(data[k]!=null)lines.push(`${k}: ${data[k]}`);});
-      const calloutChildren=lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}));
-      const callout={object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📊 CRM 데이터 (자동 동기화 영역 — 수정 시 웹보드에 반영)'}}],icon:{type:'emoji',emoji:'📊'},color:'gray_background',children:calloutChildren}};
-      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 예정 (${lines.length}줄) [DRY]`);continue;}
-      await notion('PATCH',`/blocks/${pid}/children`,{children:[callout]});
-      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 (${lines.length}줄)`);
-    }catch(e){failed++;failures.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
-    await new Promise(r=>setTimeout(r,180));
-  }
-  const summary=`CRM 역이주 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n이미 있음 (skip): ${skipped}\n빈 카드: ${empty}\n실패: ${failed}\n전체: ${pages.length}`;
-  console.log('▶ '+summary.replace(/\n/g,' | '));
-  if(failures.length)console.log('실패 목록',failures);
-  alert(summary);
-  return{applied,skipped,empty,failed,total:pages.length,failures};
-}
-window.migrateCrmToCallout=migrateCrmToCallout;
-async function migrateCrmBodyToCallout(opts){
-  opts=opts||{};
-  const dryRun=!!opts.dryRun;
-  if(!S.token){alert('Notion 토큰 없음');return;}
-  console.log('▶ CRM 본문 표 → 콜아웃 마이그 시작'+(dryRun?' (DRY RUN — 실제 변경 없음)':''));
-  let cursor=null,pages=[];
-  try{
-    do{
-      const body={page_size:100};if(cursor)body.start_cursor=cursor;
-      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
-      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
-    }while(cursor);
-  }catch(e){alert('DB query 실패: '+e.message);return;}
-  console.log(`전체 카드 ${pages.length}건`);
-  let applied=0,skippedHas=0,skippedEmpty=0,failed=0;const fails=[];
-  for(let i=0;i<pages.length;i++){
-    const p=pages[i];const pid=p.id;
-    try{
-      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
-      const blocks=r.results||[];
-      await Promise.all(blocks.map(async b=>{
-        try{
-          if(b.type==='table'&&b.has_children){
-            const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];
-          }else if(b.type==='callout'&&b.has_children){
-            const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];
-          }else if(b.type==='column_list'){
-            const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
-            b._children=cols.results||[];
-            await Promise.all(b._children.map(async col=>{
-              const items=await notion('GET',`/blocks/${col.id}/children?page_size=20`);
-              col._children=items.results||[];
-              await Promise.all(col._children.map(async item=>{
-                if(item.type==='table'&&item.has_children){
-                  const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);item._children=rows.results||[];
-                }else if(item.type==='callout'&&item.has_children){
-                  const rr=await notion('GET',`/blocks/${item.id}/children?page_size=100`);item._children=rr.results||[];
-                }
-              }));
-            }));
-          }
-        }catch{b._children=b._children||[];}
-      }));
-      const findCallout=arr=>arr.some(b=>{
-        if(b.type==='callout'){const t=(b.callout?.rich_text||[]).map(rt=>rt.plain_text||'').join('');if(/CRM\s*데이터|데이터/i.test(t))return true;}
-        if(b.type==='column_list')return (b._children||[]).some(col=>findCallout(col._children||[]));
-        return false;
-      });
-      if(findCallout(blocks)){skippedHas++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 콜아웃 이미 존재 (skip)`);continue;}
-      const data=extractCrmFromBlocks(blocks);
-      if(!Object.keys(data).length){skippedEmpty++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 본문 추출 데이터 없음 (skip)`);continue;}
-      const lines=[];
-      if(data.ssSendTime)lines.push(`ss_send: ${data.ssSendTime}`);
-      if(data.tkSendTime)lines.push(`tk_send: ${data.tkSendTime}`);
-      ['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr','tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr','spend','revenue'].forEach(k=>{if(data[k]!=null)lines.push(`${k}: ${data[k]}`);});
-      const calloutChildren=lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}));
-      const callout={object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📊 CRM 데이터 (자동 동기화 영역 — 수정 시 웹보드에 반영)'}}],icon:{type:'emoji',emoji:'📊'},color:'gray_background',children:calloutChildren}};
-      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 예정 (${lines.length}줄) [DRY] :: ${lines.join(' | ')}`);continue;}
-      await notion('PATCH',`/blocks/${pid}/children`,{children:[callout]});
-      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 (${lines.length}줄)`);
-    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
-    await new Promise(r=>setTimeout(r,180));
-  }
-  const summary=`CRM 본문→콜아웃 마이그 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n콜아웃 이미 있음 (skip): ${skippedHas}\n본문 추출 불가 (skip): ${skippedEmpty}\n실패: ${failed}\n전체: ${pages.length}`;
-  console.log('▶ '+summary.replace(/\n/g,' | '));
-  if(fails.length)console.log('실패 목록',fails);
-  alert(summary);
-  return{applied,skippedHas,skippedEmpty,failed,total:pages.length,fails};
-}
-window.migrateCrmBodyToCallout=migrateCrmBodyToCallout;
-async function migrateCrmSplitCallouts(opts){
-  opts=opts||{};
-  const dryRun=!!opts.dryRun;
-  if(!S.token){alert('Notion 토큰 없음');return;}
-  console.log('▶ 단일 콜아웃 → 다중 콜아웃 분리 시작'+(dryRun?' (DRY RUN)':''));
-  let cursor=null,pages=[];
-  try{
-    do{
-      const body={page_size:100};if(cursor)body.start_cursor=cursor;
-      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
-      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
-    }while(cursor);
-  }catch(e){alert('DB query 실패: '+e.message);return;}
-  console.log(`전체 카드 ${pages.length}건`);
-  let applied=0,alreadyMulti=0,noSingle=0,failed=0;const fails=[];
-  for(let i=0;i<pages.length;i++){
-    const p=pages[i];const pid=p.id;
-    try{
-      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
-      const blocks=r.results||[];
-      // 콜아웃 자식 fetch
-      await Promise.all(blocks.map(async b=>{
-        if(b.type==='callout'&&b.has_children){
-          try{const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];}catch{}
-        }
-      }));
-      // 이미 다중 콜아웃이 있으면 skip
-      const hasMulti=blocks.some(b=>_isMultiCalloutSection(b));
-      if(hasMulti){alreadyMulti++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 이미 다중 콜아웃 (skip)`);continue;}
-      // 단일 콜아웃 ("📊 CRM 데이터") 찾기
-      const single=blocks.find(b=>_isCrmDataCallout(b));
-      if(!single){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 단일 콜아웃 없음 (skip)`);continue;}
-      // 단일 콜아웃에서 데이터 추출
-      const data={};
-      _parseCalloutData(single,data);
-      if(!Object.keys(data).length){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 단일 콜아웃 비어있음 (skip)`);continue;}
-      // 새 콜아웃들 build
-      const newCallouts=[];
-      const chBuild=(emoji,name,prefix,sendField)=>{
-        const lines=[];
-        if(data[sendField])lines.push(`send: ${data[sendField]}`);
-        const keys=[[prefix+'_sends','sends'],[prefix+'_views','views'],[prefix+'_clicks','clicks'],[prefix+'_orders','orders'],[prefix+'_cvr','cvr']];
-        keys.forEach(([k,short])=>{if(data[k]!=null)lines.push(`${short}: ${data[k]}`);});
-        if(!lines.length)return null;
-        return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:`${emoji} ${name}`}}],icon:{type:'emoji',emoji},color:'gray_background',children:lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}))}};
-      };
-      const ssCallout=chBuild('🛒','스마트스토어','ss','ssSendTime');if(ssCallout)newCallouts.push(ssCallout);
-      const tkCallout=chBuild('💬','카카오톡채널','tk','tkSendTime');if(tkCallout)newCallouts.push(tkCallout);
-      // 성과 콜아웃
-      const perfLines=[];
-      if(data.spend!=null)perfLines.push(`spend: ${data.spend}`);
-      if(data.revenue!=null)perfLines.push(`revenue: ${data.revenue}`);
-      if(perfLines.length){
-        newCallouts.push({object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'💰 성과'}}],icon:{type:'emoji',emoji:'💰'},color:'gray_background',children:perfLines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}))}});
-      }
-      if(!newCallouts.length){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 변환할 데이터 없음 (skip)`);continue;}
-      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 분리 예정 (${newCallouts.length}개 콜아웃) [DRY]`);continue;}
-      // 새 콜아웃들 append
-      await notion('PATCH',`/blocks/${pid}/children`,{children:newCallouts});
-      // 단일 콜아웃 archive
-      await notion('PATCH',`/blocks/${single.id}`,{archived:true});
-      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 분리 완료 (${newCallouts.length}개 콜아웃, 단일 archive)`);
-    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
-    await new Promise(r=>setTimeout(r,180));
-  }
-  const summary=`단일→다중 콜아웃 분리 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n이미 다중 (skip): ${alreadyMulti}\n단일 없음/빈 카드 (skip): ${noSingle}\n실패: ${failed}\n전체: ${pages.length}`;
-  console.log('▶ '+summary.replace(/\n/g,' | '));
-  if(fails.length)console.log('실패 목록',fails);
-  alert(summary);
-  return{applied,alreadyMulti,noSingle,failed,total:pages.length,fails};
-}
-window.migrateCrmSplitCallouts=migrateCrmSplitCallouts;
-async function clearCrmProperties(opts){
-  opts=opts||{};
-  const dryRun=!!opts.dryRun;
-  if(!S.token){alert('Notion 토큰 없음');return;}
-  if(!dryRun&&!confirm('CRM_DB 의 모든 카드의 18개 속성 값을 비웁니다. 콜아웃 데이터가 있는지 먼저 확인하세요. 진행할까요?'))return;
-  console.log('▶ CRM 속성 값 일괄 비우기 시작'+(dryRun?' (DRY RUN)':''));
-  let cursor=null,pages=[];
-  try{
-    do{
-      const body={page_size:100};if(cursor)body.start_cursor=cursor;
-      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
-      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
-    }while(cursor);
-  }catch(e){alert('DB query 실패: '+e.message);return;}
-  console.log(`전체 카드 ${pages.length}건`);
-  const numCols=['CVR','매출','열람수','주문건','지출','클릭수','톡채널 CTR','스마트스토어_발송수','스마트스토어_열람수','스마트스토어_클릭수','스마트스토어_구매건','스마트스토어_CVR','톡채널_발송수','톡채널_열람수','톡채널_클릭수','톡채널_구매건','톡채널_CVR'];
-  const txtCols=['CRM문구','스마트스토어','톡채널','스마트스토어 발송시각','톡채널 발송시각'];
-  const props={};
-  numCols.forEach(c=>{props[c]={number:null};});
-  txtCols.forEach(c=>{props[c]={rich_text:[]};});
-  let cleared=0,failed=0;const fails=[];
-  for(let i=0;i<pages.length;i++){
-    const pid=pages[i].id;
-    if(dryRun){cleared++;continue;}
-    try{
-      await notion('PATCH','/pages/'+pid,{properties:props});
-      cleared++;
-      if(i%5===0)console.log(`  · [${i+1}/${pages.length}] 진행 중...`);
-    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ ${pid.slice(0,8)}`,e.message);}
-    await new Promise(r=>setTimeout(r,180));
-  }
-  const summary=`속성 값 일괄 비우기 ${dryRun?'(DRY RUN)':'완료'}\n\n비움: ${cleared}\n실패: ${failed}\n전체: ${pages.length}`;
-  console.log('▶ '+summary.replace(/\n/g,' | '));
-  if(fails.length)console.log('실패 목록',fails);
-  alert(summary);
-  return{cleared,failed,total:pages.length,fails};
-}
-window.clearCrmProperties=clearCrmProperties;
-function autoExtractCrmDetail(){
-  const d=S.crmDetail;if(!d)return;
-  if(!d.blocks||!d.blocks.length){toast('Notion 본문이 없음',true);return;}
-  const ex=extractCrmFromBlocks(d.blocks);
-  const keys=Object.keys(ex);
-  if(!keys.length){toast('본문에서 추출할 수치 없음',true);return;}
-  const labels={ssSendTime:'스마트스토어 발송시각',tkSendTime:'톡채널 발송시각',spend:'지출',revenue:'매출',ss_sends:'스마트스토어 발송수',ss_views:'스마트스토어 열람수',ss_clicks:'스마트스토어 클릭수',ss_orders:'스마트스토어 구매건',ss_cvr:'스마트스토어 CVR(%)',tk_sends:'톡채널 발송수',tk_views:'톡채널 열람수',tk_clicks:'톡채널 클릭수',tk_orders:'톡채널 구매건',tk_cvr:'톡채널 CVR(%)'};
-  const lines=keys.map(k=>`• ${labels[k]||k}: ${ex[k]}`).join('\n');
-  if(!confirm(`본문에서 다음 값을 추출했습니다.\n적용 후 '저장'을 눌러야 Notion에 반영됩니다.\n\n${lines}\n\n적용할까요?`))return;
-  Object.assign(d,ex);render();
-  toast('추출 완료 — 확인 후 저장하세요');
-}
 async function uploadImageToCloudinary(file){
   const fd=new FormData();
   fd.append('file',file);
@@ -907,7 +669,7 @@ function _collectCrmImages(blocks){
     for(const b of arr){
       if(b.type==='image'){
         const u=b.image?.file?.url||b.image?.external?.url||'';
-        if(u)out.push(u);
+        if(u)out.push({url:u,id:b.id});
       }
       if(b._children)walk(b._children);
       if(b.type==='column_list'&&b._children){
@@ -917,6 +679,35 @@ function _collectCrmImages(blocks){
   };
   walk(blocks||[]);
   return out;
+}
+let _crmImgDeleting=false;
+async function deleteCrmImage(blockId){
+  if(_crmImgDeleting){toast('삭제 중입니다',true);return;}
+  if(!blockId)return;
+  if(!confirm('이미지를 삭제할까요?'))return;
+  _crmImgDeleting=true;
+  toast('이미지 삭제 중...');
+  try{
+    await notion('PATCH','/blocks/'+blockId,{archived:true});
+    if(S.crmDetail&&S.crmDetail.blocks){
+      const removeFrom=arr=>{
+        for(let i=0;i<arr.length;i++){
+          if(arr[i].id===blockId){arr.splice(i,1);return true;}
+          if(arr[i]._children&&removeFrom(arr[i]._children))return true;
+          if(arr[i].type==='column_list'&&arr[i]._children){
+            for(const col of arr[i]._children){
+              if(col._children&&removeFrom(col._children))return true;
+            }
+          }
+        }
+        return false;
+      };
+      removeFrom(S.crmDetail.blocks);
+      render();
+    }
+    toast('✓ 이미지 삭제 완료');
+  }catch(e){toast('이미지 삭제 실패: '+e.message,true);}
+  finally{_crmImgDeleting=false;}
 }
 let _crmImgUploading=false;
 async function attachImageToCrmCard(file){
@@ -929,7 +720,17 @@ async function attachImageToCrmCard(file){
   try{
     const url=await uploadImageToCloudinary(file);
     const imageBlock={object:'block',type:'image',image:{type:'external',external:{url}}};
-    const res=await notion('PATCH','/blocks/'+targetId+'/children',{children:[imageBlock]});
+    // Notion PATCH 재시도 (rate limit / 일시 장애 대응)
+    let res=null,attempt=0,lastErr=null;
+    while(attempt<3){
+      try{res=await notion('PATCH','/blocks/'+targetId+'/children',{children:[imageBlock]});break;}
+      catch(e){lastErr=e;attempt++;if(attempt<3)await new Promise(r=>setTimeout(r,500*attempt));}
+    }
+    if(!res){
+      // 3회 재시도 실패: Cloudinary 잔재 + 사용자에게 URL 안내
+      console.warn('Notion PATCH 실패. Cloudinary URL:',url);
+      throw new Error((lastErr?.message||'unknown')+'. 업로드된 URL 콘솔 참조');
+    }
     // 낙관적 업데이트: 모달 리로드 대신 메모리 blocks 에 추가 (입력 중인 textarea/input 값 보존)
     const newBlock=res?.results?.[0]||{...imageBlock,id:'tmp-'+Date.now()};
     if(S.crmDetail&&S.crmDetail.id===d.id){
@@ -1049,40 +850,59 @@ function _buildCrmTextCallout(d){
   const lines=text?text.split(/\r?\n/):[''];
   return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📝 CRM문구'}}],icon:{type:'emoji',emoji:'📝'},color:'gray_background',children:lines.map(para)}};
 }
+let _crmSaveLock=false;
+// H2: ev/mi 갱신 시 데이터 필드만 화이트리스트로 복사 (blocks/calloutIds/lastBlockId 누수 차단)
+function _crmEvFields(d){
+  return{title:d.title,date:d.date,crmText:d.crmText,spend:d.spend,revenue:d.revenue,
+    ssSendTime:d.ssSendTime,tkSendTime:d.tkSendTime,
+    ss_sends:d.ss_sends,ss_views:d.ss_views,ss_clicks:d.ss_clicks,ss_orders:d.ss_orders,ss_cvr:d.ss_cvr,
+    tk_sends:d.tk_sends,tk_views:d.tk_views,tk_clicks:d.tk_clicks,tk_orders:d.tk_orders,tk_cvr:d.tk_cvr};
+}
 async function saveCrmDetail(){
+  if(_crmSaveLock){toast('저장 중입니다',true);return;}
   const d=S.crmDetail;if(!d)return;
   if(!d.title.trim()){toast('제목을 입력해주세요',true);return;}
+  _crmSaveLock=true;
   const ev=S.crmEvents.find(e=>e.id===d.id);
-  const prev=ev?{...ev}:null;
-  if(ev)Object.assign(ev,d);
-  if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
+  const prev=ev?_crmEvFields(ev):null;
+  const evFields=_crmEvFields(d);
+  if(ev)Object.assign(ev,evFields);
+  if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,evFields);}
   const ids=d.calloutIds||{ss:null,tk:null,perf:null,crmText:null,image:null};
   const lastId=d.lastBlockId||null;
   S.crmDetail=null;render();
+  let stage=0;
   try{
-    // 1. 이름 PATCH
+    stage=1;toast('1/3 이름 저장 중...');
     await notion('PATCH','/pages/'+d.id,{properties:{'이름':{title:[{text:{content:d.title.trim()}}]}}});
-    // 2. 채널/성과/CRM문구 콜아웃 archive (이미지 콜아웃은 손대지 않음)
+    stage=2;toast('2/3 콜아웃 정리 중...');
     const archiveTargets=[ids.ss,ids.tk,ids.perf,ids.crmText].filter(Boolean);
+    const archiveFails=[];
     for(const bid of archiveTargets){
-      try{await notion('PATCH','/blocks/'+bid,{archived:true});}catch{}
+      try{await notion('PATCH','/blocks/'+bid,{archived:true});}
+      catch(e){archiveFails.push({bid,err:e.message});}
     }
-    // 3. 새 콜아웃 build (입력값 기반)
+    // H1: 일부 archive 실패 시 abort (콜아웃 중복 방지)
+    if(archiveFails.length){
+      console.warn('CRM 콜아웃 archive 실패 목록',archiveFails);
+      throw new Error(`${archiveFails.length}/${archiveTargets.length}개 콜아웃 정리 실패. 콜아웃 중복 방지를 위해 저장 중단. 잠시 후 재시도해 주세요.`);
+    }
+    stage=3;toast('3/3 콜아웃 갱신 중...');
     const newCallouts=[
       _buildCrmTextCallout(d),
       _buildChannelCallout('🛒','스마트스토어','ss','ssSendTime',d),
       _buildChannelCallout('💬','카카오톡채널','tk','tkSendTime',d),
       _buildPerfCallout(d),
     ];
-    // 4. append (가능하면 lastId 다음에 추가하여 위치 자연스럽게)
     const payload={children:newCallouts};
     if(lastId&&!archiveTargets.includes(lastId))payload.after=lastId;
     await notion('PATCH','/blocks/'+d.id+'/children',payload);
-    toast('저장됨 (Notion 본문 콜아웃 갱신)');
+    toast('✓ 저장 완료');
   }catch(e){
     if(ev&&prev)Object.assign(ev,prev);
-    toast('저장 실패: '+e.message,true);render();
-  }
+    const stageMsg=['','이름 저장','콜아웃 정리','콜아웃 갱신'][stage]||'';
+    toast(`저장 실패 (${stageMsg} 단계): ${e.message}`,true);render();
+  }finally{_crmSaveLock=false;}
 }
 
 /* ══════════════════════════════════════
@@ -1635,7 +1455,13 @@ async function doAdd(text){
   }catch(e){S.tasks[k]=S.tasks[k].filter(t=>t.id!==tid);toast('추가 실패: '+e.message,true);}
   render();
 }
+const _toggleLocks=new Set();
 async function doToggle(id){
+  if(_toggleLocks.has(id))return; // 동일 카드 중복 토글 차단
+  _toggleLocks.add(id);
+  try{await _doToggleInner(id);}finally{_toggleLocks.delete(id);}
+}
+async function _doToggleInner(id){
   const{t,k}=findTask(id);
   if(!t)return;
   const nv=!t.completed;
@@ -1905,13 +1731,16 @@ function rCrmDetailModal(){
           return `
           <div>
             <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">📷 이미지</div>
-            ${imgs.length?`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">${imgs.map(u=>`<img src="${esc(u)}" loading="lazy" style="max-width:100%;border-radius:6px"/>`).join('')}</div>`:''}
+            ${imgs.length?`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">${imgs.map(img=>`<div style="position:relative">
+              <img src="${esc(img.url)}" loading="lazy" style="max-width:100%;border-radius:6px;display:block"/>
+              <button onclick="deleteCrmImage('${img.id}')" title="이미지 삭제" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.65);border:none;border-radius:50%;width:24px;height:24px;font-size:13px;color:#fff;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
+            </div>`).join('')}</div>`:''}
             <div onclick="document.getElementById('crm-img-input').click()"
               ondragover="event.preventDefault();this.style.background='#fff5f5';this.style.borderColor='#ef4444'"
               ondragleave="this.style.background='#f9f8f6';this.style.borderColor='#e8e4de'"
               ondrop="event.preventDefault();this.style.background='#f9f8f6';this.style.borderColor='#e8e4de';if(event.dataTransfer.files[0])attachImageToCrmCard(event.dataTransfer.files[0])"
               style="background:#f9f8f6;border:1.5px dashed #e8e4de;border-radius:8px;padding:12px;text-align:center;cursor:pointer;font-size:11px;color:#9b9794;transition:all .12s">
-              드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택
+              ${/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)?'클릭하여 카메라/갤러리에서 선택':'드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택'}
             </div>
             <input id="crm-img-input" type="file" accept="image/*" style="display:none" onchange="if(this.files[0])attachImageToCrmCard(this.files[0])"/>
           </div>

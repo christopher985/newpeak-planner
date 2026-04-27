@@ -3,3 +3,14 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# 강제 재검증 헤더 — Ctrl+F5 의존성 줄임
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
