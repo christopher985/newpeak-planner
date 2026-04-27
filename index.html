@@ -87,15 +87,15 @@ const TEAM_COLOR = {
   '운영':'#10b981','퍼포먼스':'#e05c1a','콘텐츠':'#ec4899',
   '생산기획':'#3b82f6','디자인':'#8b5cf6','정산':'#f59e0b'
 };
-const BRANDS = ['진수성찬','얼김치','한국고려삼','올라잇클래스','히든','기타'];
+const BRANDS = ['진수성찬','얼김치','한국고려삼','올라잇클래스','히든'];
 const BRAND_COLOR = {
   '진수성찬':'#3b82f6','얼김치':'#e05c1a','한국고려삼':'#ef4444',
-  '올라잇클래스':'#8b5cf6','히든':'#6b7280','기타':'transparent'
+  '올라잇클래스':'#8b5cf6','히든':'#6b7280'
 };
-const AREAS = ['자사몰','스마트스토어','CRM','메타광고','GFA/검색광고','브랜드커넥트','유튜브','인스타그램','기타'];
+const AREAS = ['자사몰','스마트스토어','CRM','메타광고','GFA/검색광고','브랜드커넥트','유튜브','인스타그램'];
 const AREA_COLOR = {
   '자사몰':'#e05c1a','스마트스토어':'#10b981','CRM':'#ef4444','메타광고':'#3b82f6',
-  'GFA/검색광고':'#f59e0b','브랜드커넥트':'#8b5cf6','유튜브':'#dc2626','인스타그램':'#ec4899','기타':'#9b9794'
+  'GFA/검색광고':'#f59e0b','브랜드커넥트':'#8b5cf6','유튜브':'#dc2626','인스타그램':'#ec4899'
 };
 const CARD_COLORS = [
   {name:'흰색',bg:'#ffffff',border:'#e8e4de',dot:'#e8e4de'},
@@ -539,7 +539,7 @@ let S = {
   token: localStorage.getItem(TOKEN_KEY)||'',
   team: _savedTeam,
   user: (TEAM_MEMBERS[_savedTeam]||['Christopher'])[0],
-  addBrand: '기타',
+  addBrand: null,
   addArea: null,
   addColor: null,
   calYear: getKSTNow().getUTCFullYear(),
@@ -690,6 +690,7 @@ function mapTask(p){
     color:p.properties['색상']?.select?.name||null,
     createdAt:p.created_time||null,
     editedAt:p.last_edited_time||null,
+    completedAt:p.properties['완료시점']?.date?.start||null,
   };
 }
 async function loadSched(user){
@@ -1061,11 +1062,12 @@ async function doToggle(id){
   if(nv&&isCarried){
     S.tasks[k]=(S.tasks[k]||[]).filter(x=>x.id!==id);
     const todayK=`${S.selectedDate}-${S.user}`;
-    const moved={...t,completed:true,carried:false};
+    const nowIso=new Date().toISOString();
+    const moved={...t,completed:true,carried:false,completedAt:nowIso};
     (S.tasks[todayK]=S.tasks[todayK]||[]).push(moved);
     if(S.dropZone[todayK])S.dropZone[todayK]=S.dropZone[todayK].filter(x=>x!==id);
     render();
-    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}}}});
+    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}},'완료시점':{date:{start:nowIso}}}});
       delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);
     }catch(e){
       S.tasks[todayK]=(S.tasks[todayK]||[]).filter(x=>x.id!==id);
@@ -1074,12 +1076,14 @@ async function doToggle(id){
     }
     return;
   }
+  const prevCompletedAt=t.completedAt;
   t.completed=nv;
+  t.completedAt=nv?new Date().toISOString():null;
   if(nv&&S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
   render();
-  try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv}}});
+  try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv},'완료시점':nv?{date:{start:t.completedAt}}:{date:null}}});
     if(S.team!=='디자인'&&S.team!=='콘텐츠'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
-  }catch(e){t.completed=!nv;toast('업데이트 실패',true);render();}
+  }catch(e){t.completed=!nv;t.completedAt=prevCompletedAt;toast('업데이트 실패',true);render();}
 }
 async function doDel(id){
   const{t:found,k}=findTask(id);
@@ -1093,7 +1097,7 @@ async function doDel(id){
 function openMemo(id){
   const{t}=findTask(id);
   if(!t||t._p)return;
-  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,dirty:false};
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,dirty:false};
   render();
   setTimeout(()=>{const el=document.getElementById('memo-ta');if(el)el.focus();},60);
 }
@@ -1102,14 +1106,18 @@ function closeMemo(){
   else{S.memoModal=null;render();}
 }
 function setMemoField(field,val){if(S.memoModal){S.memoModal[field]=val;S.memoModal.dirty=true;}}
+function isoToLocalInput(iso){if(!iso)return'';const d=new Date(iso);if(isNaN(d))return'';const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
+function setMemoCompletedAt(localStr){if(!S.memoModal)return;if(!localStr){S.memoModal.completedAt=null;}else{const d=new Date(localStr);if(!isNaN(d))S.memoModal.completedAt=d.toISOString();}S.memoModal.dirty=true;}
 function toggleMemoField(field,val){if(S.memoModal){S.memoModal[field]=S.memoModal[field]===val?'':val;S.memoModal.dirty=true;render();}}
 async function saveMemo(){
   if(!S.memoModal)return;
   const m=S.memoModal;
   const{t}=findTask(m.id);
   if(!t){S.memoModal=null;render();return;}
-  const prev={text:t.text,memo:t.memo,brand:t.brand,area:t.area,color:t.color};
+  const prev={text:t.text,memo:t.memo,brand:t.brand,area:t.area,color:t.color,completedAt:t.completedAt};
   t.text=m.text;t.memo=m.memo;t.brand=m.brand||null;t.area=m.area||null;t.color=m.color||null;
+  const completedAtChanged=t.completed&&m.completedAt!==m.origCompletedAt;
+  if(completedAtChanged)t.completedAt=m.completedAt;
   S.memoModal=null;render();
   try{
     const props={'메모':{rich_text:[{text:{content:m.memo}}]},'업무명':{title:[{text:{content:m.text}}]}};
@@ -1121,7 +1129,11 @@ async function saveMemo(){
       if(m.color)props['색상']={select:{name:m.color}};
       else props['색상']={select:null};
     }
+    if(completedAtChanged){
+      props['완료시점']=m.completedAt?{date:{start:m.completedAt}}:{date:null};
+    }
     await notion('PATCH',`/pages/${m.id}`,{properties:props});
+    if(completedAtChanged&&S.team!=='디자인'&&S.team!=='콘텐츠'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
   }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
 }
 function rMemoModal(){
@@ -1170,7 +1182,13 @@ function rMemoModal(){
         ${m.completed?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px">
           ${m.dateStr?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">업무일</span><span style="font-size:11px;color:#1c1a17;font-weight:600">${m.dateStr}</span></div>`:''}
           ${m.createdAt?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">생성</span><span style="font-size:11px;color:#1c1a17">${new Date(m.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>`:''}
-          ${m.editedAt?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">완료</span><span style="font-size:11px;color:#22c55e;font-weight:600">${new Date(m.editedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>`:''}
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">완료</span>
+            <input type="datetime-local" value="${isoToLocalInput(m.completedAt)}" oninput="setMemoCompletedAt(this.value)"
+              style="flex:1;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;font-size:11px;color:#22c55e;font-weight:600;outline:none;font-family:inherit"
+              onfocus="this.style.borderColor='#22c55e'" onblur="this.style.borderColor='#e8e4de'"/>
+            ${m.completedAt?`<button onclick="setMemoCompletedAt('');render()" title="완료 시점 지우기" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;font-size:11px;color:#9b9794;cursor:pointer;line-height:1;flex-shrink:0">×</button>`:''}
+          </div>
         </div>`:''}
         <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">메모</div>
@@ -1183,7 +1201,7 @@ function rMemoModal(){
       </div>
       <div style="padding:10px 18px 16px;border-top:1px solid #e8e4de;display:flex;justify-content:flex-end;gap:8px">
         ${m.completed
-          ?`<button onclick="S.memoModal=null;render()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">닫기</button>`
+          ?`<button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">닫기</button>`
           :`<button onclick="S.memoModal.dirty=false;S.memoModal=null;render()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
            <button onclick="saveMemo()" style="background:#3b82f6;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;color:#fff;cursor:pointer">저장</button>`}
       </div>
@@ -2524,7 +2542,7 @@ function render(){
   const monthly=S.tasks[monthlyDoneKey]||[];
   const todayDone=tasks.filter(t=>t.completed);
   const seen=new Set();
-  const dn=[...todayDone,...monthly].filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return x.dateStr&&x.dateStr>=_wkS&&x.dateStr<=_wkE;});
+  const dn=[...todayDone,...monthly].filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return x.dateStr&&x.dateStr>=_wkS&&x.dateStr<=_wkE;}).sort((a,b)=>{const ax=a.completedAt||a.editedAt||'';const bx=b.completedAt||b.editedAt||'';return bx.localeCompare(ax);});
   // 오늘 이후 날짜: 과거 미완료 이월
   if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
     const carried=S.tasks['carried-'+S.user]||[];
