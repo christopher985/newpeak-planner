@@ -70,6 +70,8 @@ const SCHED_DB  = '014f0605d8fb490abfb58789e7a9c30b';
 const DESIGN_DB = '26560753b39880609313e71dd522ca3d';
 const CONTENT_DB= '33460753b39880daa344fbe9f6667250';
 const CRM_DB    = '2b260753-b398-80b0-b7f4-faad72bab6c7';
+const CLOUDINARY_CLOUD = 'drwnutgxi';
+const CLOUDINARY_PRESET = 'crm_unsigned';
 const TOKEN_KEY = 'newpick-notion-token';
 const TEAM_KEY  = 'newpick-team';
 const API_BASE  = '/.netlify/functions/proxy';
@@ -889,6 +891,119 @@ function autoExtractCrmDetail(){
   if(!confirm(`본문에서 다음 값을 추출했습니다.\n적용 후 '저장'을 눌러야 Notion에 반영됩니다.\n\n${lines}\n\n적용할까요?`))return;
   Object.assign(d,ex);render();
   toast('추출 완료 — 확인 후 저장하세요');
+}
+async function uploadImageToCloudinary(file){
+  const fd=new FormData();
+  fd.append('file',file);
+  fd.append('upload_preset',CLOUDINARY_PRESET);
+  const res=await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,{method:'POST',body:fd});
+  if(!res.ok)throw new Error('Cloudinary 업로드 실패: '+res.status);
+  const json=await res.json();
+  if(!json.secure_url)throw new Error('Cloudinary 응답에 URL 없음');
+  return json.secure_url;
+}
+async function attachImageToCrmCard(file){
+  if(!S.crmDetail||!file)return;
+  const d=S.crmDetail;
+  const targetId=(d.calloutIds&&d.calloutIds.image)||d.id;
+  toast('이미지 업로드 중...');
+  try{
+    const url=await uploadImageToCloudinary(file);
+    const imageBlock={object:'block',type:'image',image:{type:'external',external:{url}}};
+    await notion('PATCH','/blocks/'+targetId+'/children',{children:[imageBlock]});
+    toast('✓ 이미지 첨부 완료');
+    // 본문 갱신을 위해 모달 재로드
+    const id=d.id;
+    S.crmDetail=null;render();
+    openCrmDetail(id);
+  }catch(e){toast('이미지 첨부 실패: '+e.message,true);}
+}
+function handleCrmImagePaste(e){
+  if(!S.crmDetail)return;
+  const items=(e.clipboardData||window.clipboardData)?.items||[];
+  for(const item of items){
+    if(item.type&&item.type.startsWith('image/')){
+      const file=item.getAsFile();
+      if(file){e.preventDefault();attachImageToCrmCard(file);return;}
+    }
+  }
+}
+function serializeCrmToMd(d){
+  const lines=[];
+  lines.push(`# ${d.title||'제목 없음'}`);
+  lines.push(`> 날짜: ${d.date||''}`);
+  lines.push('');
+  // 이미지 수집 (본문 + 콜아웃 자식 + column 재귀)
+  const images=[];
+  const collectImages=arr=>{
+    for(const b of arr){
+      if(b.type==='image'){
+        const u=b.image?.file?.url||b.image?.external?.url||'';
+        if(u)images.push(u);
+      }
+      if(b._children)collectImages(b._children);
+      if(b.type==='column_list'&&b._children){
+        b._children.forEach(col=>{if(col._children)collectImages(col._children);});
+      }
+    }
+  };
+  collectImages(d.blocks||[]);
+  if(images.length){
+    lines.push('## 📷 이미지');
+    images.forEach(u=>lines.push(`![](${u})`));
+    lines.push('');
+  }
+  if(d.crmText){
+    lines.push('## 📝 CRM 문구');
+    lines.push(d.crmText);
+    lines.push('');
+  }
+  const fmtNum=v=>(v!=null&&v!=='')?Number(v).toLocaleString():null;
+  const ssActive=['ssSendTime','ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr'].some(k=>d[k]!=null&&d[k]!=='');
+  if(ssActive){
+    lines.push('## 🛒 스마트스토어');
+    if(d.ssSendTime)lines.push(`- 발송시각: ${d.ssSendTime}`);
+    if(fmtNum(d.ss_sends))lines.push(`- 발송수: ${fmtNum(d.ss_sends)}`);
+    if(fmtNum(d.ss_views))lines.push(`- 열람수: ${fmtNum(d.ss_views)}`);
+    if(fmtNum(d.ss_clicks))lines.push(`- 클릭수: ${fmtNum(d.ss_clicks)}`);
+    if(fmtNum(d.ss_orders))lines.push(`- 구매건: ${fmtNum(d.ss_orders)}`);
+    if(d.ss_cvr!=null&&d.ss_cvr!=='')lines.push(`- CVR: ${d.ss_cvr}%`);
+    lines.push('');
+  }
+  const tkActive=['tkSendTime','tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr'].some(k=>d[k]!=null&&d[k]!=='');
+  if(tkActive){
+    lines.push('## 💬 카카오톡채널');
+    if(d.tkSendTime)lines.push(`- 발송시각: ${d.tkSendTime}`);
+    if(fmtNum(d.tk_sends))lines.push(`- 발송수: ${fmtNum(d.tk_sends)}`);
+    if(fmtNum(d.tk_views))lines.push(`- 열람수: ${fmtNum(d.tk_views)}`);
+    if(fmtNum(d.tk_clicks))lines.push(`- 클릭수: ${fmtNum(d.tk_clicks)}`);
+    if(fmtNum(d.tk_orders))lines.push(`- 구매건: ${fmtNum(d.tk_orders)}`);
+    if(d.tk_cvr!=null&&d.tk_cvr!=='')lines.push(`- CVR: ${d.tk_cvr}%`);
+    lines.push('');
+  }
+  if((d.spend!=null&&d.spend!=='')||(d.revenue!=null&&d.revenue!=='')){
+    lines.push('## 💰 성과');
+    if(fmtNum(d.spend))lines.push(`- 지출: ${fmtNum(d.spend)}원`);
+    if(fmtNum(d.revenue))lines.push(`- 매출: ${fmtNum(d.revenue)}원`);
+    if(d.spend&&d.revenue)lines.push(`- ROAS: ${Math.round(d.revenue/d.spend*100).toLocaleString()}%`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+function downloadCrmAsMd(){
+  if(!S.crmDetail)return;
+  const d=S.crmDetail;
+  const md=serializeCrmToMd(d);
+  const safe=(d.title||'crm').replace(/[\\/:*?"<>|]/g,'_').trim()||'crm';
+  const filename=`${safe}_${d.date||''}.md`;
+  const blob=new Blob(['﻿'+md],{type:'text/markdown;charset=utf-8'}); // BOM 으로 한글 호환
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('✓ md 다운로드');
 }
 function _buildChannelCallout(emoji,title,prefix,sendField,d){
   const para=t=>({object:'block',type:'paragraph',paragraph:{rich_text:t?[{type:'text',text:{content:t}}]:[]}});
@@ -1738,7 +1853,8 @@ function rCrmDetailModal(){
             <div style="font-size:11px;color:#9b9794;margin-top:4px">${d.date}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-            <a href="https://www.notion.so/${d.id.replace(/-/g,'')}" target="_blank" rel="noopener" title="Notion 에서 열기 (이미지 첨부·세부 편집)" style="background:#fff;border:1px solid #e8e4de;border-radius:6px;padding:5px 10px;font-size:10px;font-weight:700;color:#6b6762;cursor:pointer;text-decoration:none;line-height:1;white-space:nowrap">🔗 Notion</a>
+            <button onclick="downloadCrmAsMd()" title="이미지+데이터 md 파일로 추출" style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;font-size:10px;font-weight:700;color:#b91c1c;cursor:pointer;line-height:1;white-space:nowrap">📥 md</button>
+            <a href="https://www.notion.so/${d.id.replace(/-/g,'')}" target="_blank" rel="noopener" title="Notion 에서 열기 (세부 편집)" style="background:#fff;border:1px solid #e8e4de;border-radius:6px;padding:5px 10px;font-size:10px;font-weight:700;color:#6b6762;cursor:pointer;text-decoration:none;line-height:1;white-space:nowrap">🔗 Notion</a>
             <button onclick="closeCrmDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
           </div>
         </div>
@@ -1752,6 +1868,17 @@ function rCrmDetailModal(){
           </div>
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📷 이미지 첨부</div>
+          <div onclick="document.getElementById('crm-img-input').click()"
+            ondragover="event.preventDefault();this.style.background='#fff5f5';this.style.borderColor='#ef4444'"
+            ondragleave="this.style.background='#f9f8f6';this.style.borderColor='#e8e4de'"
+            ondrop="event.preventDefault();this.style.background='#f9f8f6';this.style.borderColor='#e8e4de';if(event.dataTransfer.files[0])attachImageToCrmCard(event.dataTransfer.files[0])"
+            style="background:#f9f8f6;border:1.5px dashed #e8e4de;border-radius:8px;padding:14px;text-align:center;cursor:pointer;font-size:11px;color:#9b9794;transition:all .12s">
+            드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택
+          </div>
+          <input id="crm-img-input" type="file" accept="image/*" style="display:none" onchange="if(this.files[0])attachImageToCrmCard(this.files[0])"/>
+        </div>
         <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📝 CRM문구</div>
           <textarea oninput="setCrmDetailField('crmText',this.value)" placeholder="CRM 발송 문구 (저장 시 본문 📝 콜아웃에 반영)"
@@ -3123,6 +3250,8 @@ function resetToken(){
    초기화
 ══════════════════════════════════════ */
 render();
+// CRM 모달 열린 동안 Ctrl+V 이미지 클립보드 붙여넣기 → Cloudinary 업로드
+document.addEventListener('paste',handleCrmImagePaste);
 // Google Calendar 자동 연동 (GIS 로딩 대기 후)
 setTimeout(()=>gcalEnsureToken(),800);
 if(S.token){
