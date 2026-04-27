@@ -602,6 +602,76 @@ async function migrateCrmToCallout(opts){
   return{applied,skipped,empty,failed,total:pages.length,failures};
 }
 window.migrateCrmToCallout=migrateCrmToCallout;
+async function migrateCrmBodyToCallout(opts){
+  opts=opts||{};
+  const dryRun=!!opts.dryRun;
+  if(!S.token){alert('Notion 토큰 없음');return;}
+  console.log('▶ CRM 본문 표 → 콜아웃 마이그 시작'+(dryRun?' (DRY RUN — 실제 변경 없음)':''));
+  let cursor=null,pages=[];
+  try{
+    do{
+      const body={page_size:100};if(cursor)body.start_cursor=cursor;
+      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
+      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
+    }while(cursor);
+  }catch(e){alert('DB query 실패: '+e.message);return;}
+  console.log(`전체 카드 ${pages.length}건`);
+  let applied=0,skippedHas=0,skippedEmpty=0,failed=0;const fails=[];
+  for(let i=0;i<pages.length;i++){
+    const p=pages[i];const pid=p.id;
+    try{
+      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
+      const blocks=r.results||[];
+      await Promise.all(blocks.map(async b=>{
+        try{
+          if(b.type==='table'&&b.has_children){
+            const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];
+          }else if(b.type==='callout'&&b.has_children){
+            const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];
+          }else if(b.type==='column_list'){
+            const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
+            b._children=cols.results||[];
+            await Promise.all(b._children.map(async col=>{
+              const items=await notion('GET',`/blocks/${col.id}/children?page_size=20`);
+              col._children=items.results||[];
+              await Promise.all(col._children.map(async item=>{
+                if(item.type==='table'&&item.has_children){
+                  const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);item._children=rows.results||[];
+                }else if(item.type==='callout'&&item.has_children){
+                  const rr=await notion('GET',`/blocks/${item.id}/children?page_size=100`);item._children=rr.results||[];
+                }
+              }));
+            }));
+          }
+        }catch{b._children=b._children||[];}
+      }));
+      const findCallout=arr=>arr.some(b=>{
+        if(b.type==='callout'){const t=(b.callout?.rich_text||[]).map(rt=>rt.plain_text||'').join('');if(/CRM\s*데이터|데이터/i.test(t))return true;}
+        if(b.type==='column_list')return (b._children||[]).some(col=>findCallout(col._children||[]));
+        return false;
+      });
+      if(findCallout(blocks)){skippedHas++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 콜아웃 이미 존재 (skip)`);continue;}
+      const data=extractCrmFromBlocks(blocks);
+      if(!Object.keys(data).length){skippedEmpty++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 본문 추출 데이터 없음 (skip)`);continue;}
+      const lines=[];
+      if(data.ssSendTime)lines.push(`ss_send: ${data.ssSendTime}`);
+      if(data.tkSendTime)lines.push(`tk_send: ${data.tkSendTime}`);
+      ['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr','tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr','spend','revenue'].forEach(k=>{if(data[k]!=null)lines.push(`${k}: ${data[k]}`);});
+      const calloutChildren=lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}));
+      const callout={object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📊 CRM 데이터 (자동 동기화 영역 — 수정 시 웹보드에 반영)'}}],icon:{type:'emoji',emoji:'📊'},color:'gray_background',children:calloutChildren}};
+      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 예정 (${lines.length}줄) [DRY] :: ${lines.join(' | ')}`);continue;}
+      await notion('PATCH',`/blocks/${pid}/children`,{children:[callout]});
+      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 (${lines.length}줄)`);
+    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
+    await new Promise(r=>setTimeout(r,180));
+  }
+  const summary=`CRM 본문→콜아웃 마이그 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n콜아웃 이미 있음 (skip): ${skippedHas}\n본문 추출 불가 (skip): ${skippedEmpty}\n실패: ${failed}\n전체: ${pages.length}`;
+  console.log('▶ '+summary.replace(/\n/g,' | '));
+  if(fails.length)console.log('실패 목록',fails);
+  alert(summary);
+  return{applied,skippedHas,skippedEmpty,failed,total:pages.length,fails};
+}
+window.migrateCrmBodyToCallout=migrateCrmBodyToCallout;
 function autoExtractCrmDetail(){
   const d=S.crmDetail;if(!d)return;
   if(!d.blocks||!d.blocks.length){toast('Notion 본문이 없음',true);return;}
