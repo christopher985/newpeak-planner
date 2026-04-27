@@ -313,7 +313,37 @@ async function loadCrmEvents(){
       tkSendTime:txt(p.properties['톡채널 발송시각'])||'',
     }));
     _crmLoaded=key;render();
+    loadCrmCalloutsAsync(key);
   }catch(e){S.crmEvents=[];toast('CRM 로드 실패: '+e.message,true);}
+}
+async function loadCrmCalloutsAsync(key){
+  // β 적용 후 속성이 비어 있어도 본문 콜아웃에서 점진적으로 채워줌
+  const events=[...S.crmEvents];
+  const chunk=8;
+  for(let i=0;i<events.length;i+=chunk){
+    if(_crmLoaded!==key)return; // 다른 월로 이동 시 중단
+    const slice=events.slice(i,i+chunk);
+    await Promise.all(slice.map(async ev=>{
+      try{
+        const r=await notion('GET',`/blocks/${ev.id}/children?page_size=100`);
+        const blocks=r.results||[];
+        await Promise.all(blocks.map(async b=>{
+          try{
+            if(b.type==='callout'&&b.has_children){
+              const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);
+              b._children=r2.results||[];
+            }
+          }catch{b._children=b._children||[];}
+        }));
+        const ex=extractCrmFromBlocks(blocks);
+        if(ex&&Object.keys(ex).length){
+          const cur=S.crmEvents.find(e=>e.id===ev.id);
+          if(cur)Object.assign(cur,ex);
+        }
+      }catch{}
+    }));
+    render();
+  }
 }
 function crmByDate(){
   const map={};
@@ -486,9 +516,72 @@ function _isCrmDataCallout(b){
   const title=_rtText(b);
   return /CRM\s*데이터|데이터/i.test(title);
 }
+function _isMultiCalloutSection(b){
+  if(b.type!=='callout')return null;
+  const t=_rtText(b);
+  if(/이미지/.test(t))return 'image';
+  if(/문구|카피/i.test(t))return 'crmText';
+  if(/스마트\s*스토어/.test(t))return 'ss';
+  if(/톡\s*채널|카카오/.test(t))return 'tk';
+  if(/성과|지출|매출/.test(t))return 'perf';
+  return null;
+}
+function _parseChannelCallout(callout,prefix,out){
+  const children=callout._children||[];
+  for(const c of children){
+    const line=_rtText(c);if(!line)continue;
+    let m;
+    if((m=line.match(/^\s*send\s*[:：]\s*(.+?)\s*$/i))){out[prefix==='ss'?'ssSendTime':'tkSendTime']=m[1].trim();continue;}
+    if((m=line.match(/^\s*sends\s*[:：]\s*([\d,]+)/i))){out[prefix+'_sends']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*views\s*[:：]\s*([\d,]+)/i))){out[prefix+'_views']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*clicks\s*[:：]\s*([\d,]+)/i))){out[prefix+'_clicks']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*orders\s*[:：]\s*([\d,]+)/i))){out[prefix+'_orders']=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*cvr\s*[:：]\s*([\d.]+)/i))){out[prefix+'_cvr']=Number(m[1]);continue;}
+    if(/[발열클구][송람릭매]|sends?|views?|clicks?|orders?/i.test(line)&&line.includes('=')){_parseCompactRow(line,prefix+'_',out);continue;}
+  }
+}
+function _parsePerfCallout(callout,out){
+  const children=callout._children||[];
+  for(const c of children){
+    const line=_rtText(c);if(!line)continue;
+    let m;
+    if((m=line.match(/^\s*spend\s*[:：]\s*([\d,]+)/i))){out.spend=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*revenue\s*[:：]\s*([\d,]+)/i))){out.revenue=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*aov\s*[:：]\s*([\d,]+)/i))){out.aov=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*지출\s*[:：]\s*([\d,]+)/))){out.spend=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*매출\s*[:：]\s*([\d,]+)/))){out.revenue=Number(m[1].replace(/,/g,''));continue;}
+  }
+}
+function _parseCrmTextCallout(callout,out){
+  const children=callout._children||[];
+  const texts=[];
+  for(const c of children){const line=_rtText(c);if(line)texts.push(line);}
+  if(texts.length)out.crmText=texts.join('\n');
+}
+function extractCrmFromMultiCallouts(blocks){
+  const out={};let found=false;
+  const walk=arr=>{
+    for(const b of arr){
+      const sec=_isMultiCalloutSection(b);
+      if(sec){
+        found=true;
+        if(sec==='ss')_parseChannelCallout(b,'ss',out);
+        else if(sec==='tk')_parseChannelCallout(b,'tk',out);
+        else if(sec==='perf')_parsePerfCallout(b,out);
+        else if(sec==='crmText')_parseCrmTextCallout(b,out);
+      }
+      if(b.type==='column_list'){(b._children||[]).forEach(col=>walk(col._children||[]));}
+    }
+  };
+  walk(blocks||[]);
+  return found?out:null;
+}
 function extractCrmFromBlocks(blocks){
+  // 1순위: 다중 콜아웃 (구성 요소별 분리) — 새 표준
+  const multi=extractCrmFromMultiCallouts(blocks);
+  if(multi)return multi;
   const out={};
-  // 1순위: 콜아웃 데이터 영역
+  // 2순위: 단일 콜아웃 ("CRM 데이터") — 마이그 v1/v2 호환
   let calloutFound=false;
   const findCallout=arr=>{
     for(const b of arr){
@@ -524,29 +617,16 @@ function extractCrmFromBlocks(blocks){
   walk(blocks||[],null);
   return out;
 }
-async function syncCrmFromBlocks(d){
+function syncCrmFromBlocks(d){
+  // 콜아웃이 단일 데이터 소스 — 속성에 PATCH 하지 않고 메모리만 갱신
   if(!d||!d.blocks||!d.blocks.length)return;
   const ex=extractCrmFromBlocks(d.blocks);
   if(!Object.keys(ex).length)return;
-  const updates={};
-  for(const [k,v] of Object.entries(ex)){if(d[k]!==v)updates[k]=v;}
-  if(!Object.keys(updates).length)return;
-  Object.assign(d,updates);
-  const numProp=v=>({number:v!==null&&v!==undefined&&v!==''?Number(v):null});
-  const propMap={ssSendTime:'스마트스토어 발송시각',tkSendTime:'톡채널 발송시각',spend:'지출',revenue:'매출',ss_sends:'스마트스토어_발송수',ss_views:'스마트스토어_열람수',ss_clicks:'스마트스토어_클릭수',ss_orders:'스마트스토어_구매건',ss_cvr:'스마트스토어_CVR',tk_sends:'톡채널_발송수',tk_views:'톡채널_열람수',tk_clicks:'톡채널_클릭수',tk_orders:'톡채널_구매건',tk_cvr:'톡채널_CVR'};
-  const props={};
-  for(const [k,v] of Object.entries(updates)){
-    const pn=propMap[k];if(!pn)continue;
-    if(k==='ssSendTime'||k==='tkSendTime')props[pn]={rich_text:v?[{text:{content:String(v)}}]:[]};
-    else props[pn]=numProp(v);
-  }
-  if(!Object.keys(props).length)return;
-  try{
-    await notion('PATCH','/pages/'+d.id,{properties:props});
-    const ev=S.crmEvents.find(e=>e.id===d.id);if(ev)Object.assign(ev,updates);
-    if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,updates);}
-    if(S.crmDetail&&S.crmDetail.id===d.id)render();
-  }catch(e){toast('자동 동기화 실패: '+e.message,true);}
+  Object.assign(d,ex);
+  // 캘린더/캘린더모달 캐시 동기화
+  const ev=S.crmEvents.find(e=>e.id===d.id);if(ev)Object.assign(ev,ex);
+  if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,ex);}
+  if(S.crmDetail&&S.crmDetail.id===d.id)render();
 }
 async function migrateCrmToCallout(opts){
   opts=opts||{};
@@ -672,6 +752,116 @@ async function migrateCrmBodyToCallout(opts){
   return{applied,skippedHas,skippedEmpty,failed,total:pages.length,fails};
 }
 window.migrateCrmBodyToCallout=migrateCrmBodyToCallout;
+async function migrateCrmSplitCallouts(opts){
+  opts=opts||{};
+  const dryRun=!!opts.dryRun;
+  if(!S.token){alert('Notion 토큰 없음');return;}
+  console.log('▶ 단일 콜아웃 → 다중 콜아웃 분리 시작'+(dryRun?' (DRY RUN)':''));
+  let cursor=null,pages=[];
+  try{
+    do{
+      const body={page_size:100};if(cursor)body.start_cursor=cursor;
+      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
+      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
+    }while(cursor);
+  }catch(e){alert('DB query 실패: '+e.message);return;}
+  console.log(`전체 카드 ${pages.length}건`);
+  let applied=0,alreadyMulti=0,noSingle=0,failed=0;const fails=[];
+  for(let i=0;i<pages.length;i++){
+    const p=pages[i];const pid=p.id;
+    try{
+      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
+      const blocks=r.results||[];
+      // 콜아웃 자식 fetch
+      await Promise.all(blocks.map(async b=>{
+        if(b.type==='callout'&&b.has_children){
+          try{const r2=await notion('GET',`/blocks/${b.id}/children?page_size=100`);b._children=r2.results||[];}catch{}
+        }
+      }));
+      // 이미 다중 콜아웃이 있으면 skip
+      const hasMulti=blocks.some(b=>_isMultiCalloutSection(b));
+      if(hasMulti){alreadyMulti++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 이미 다중 콜아웃 (skip)`);continue;}
+      // 단일 콜아웃 ("📊 CRM 데이터") 찾기
+      const single=blocks.find(b=>_isCrmDataCallout(b));
+      if(!single){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 단일 콜아웃 없음 (skip)`);continue;}
+      // 단일 콜아웃에서 데이터 추출
+      const data={};
+      _parseCalloutData(single,data);
+      if(!Object.keys(data).length){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 단일 콜아웃 비어있음 (skip)`);continue;}
+      // 새 콜아웃들 build
+      const newCallouts=[];
+      const chBuild=(emoji,name,prefix,sendField)=>{
+        const lines=[];
+        if(data[sendField])lines.push(`send: ${data[sendField]}`);
+        const keys=[[prefix+'_sends','sends'],[prefix+'_views','views'],[prefix+'_clicks','clicks'],[prefix+'_orders','orders'],[prefix+'_cvr','cvr']];
+        keys.forEach(([k,short])=>{if(data[k]!=null)lines.push(`${short}: ${data[k]}`);});
+        if(!lines.length)return null;
+        return{object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:`${emoji} ${name}`}}],icon:{type:'emoji',emoji},color:'gray_background',children:lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}))}};
+      };
+      const ssCallout=chBuild('🛒','스마트스토어','ss','ssSendTime');if(ssCallout)newCallouts.push(ssCallout);
+      const tkCallout=chBuild('💬','카카오톡채널','tk','tkSendTime');if(tkCallout)newCallouts.push(tkCallout);
+      // 성과 콜아웃
+      const perfLines=[];
+      if(data.spend!=null)perfLines.push(`spend: ${data.spend}`);
+      if(data.revenue!=null)perfLines.push(`revenue: ${data.revenue}`);
+      if(perfLines.length){
+        newCallouts.push({object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'💰 성과'}}],icon:{type:'emoji',emoji:'💰'},color:'gray_background',children:perfLines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}))}});
+      }
+      if(!newCallouts.length){noSingle++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 변환할 데이터 없음 (skip)`);continue;}
+      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 분리 예정 (${newCallouts.length}개 콜아웃) [DRY]`);continue;}
+      // 새 콜아웃들 append
+      await notion('PATCH',`/blocks/${pid}/children`,{children:newCallouts});
+      // 단일 콜아웃 archive
+      await notion('PATCH',`/blocks/${single.id}`,{archived:true});
+      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 분리 완료 (${newCallouts.length}개 콜아웃, 단일 archive)`);
+    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
+    await new Promise(r=>setTimeout(r,180));
+  }
+  const summary=`단일→다중 콜아웃 분리 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n이미 다중 (skip): ${alreadyMulti}\n단일 없음/빈 카드 (skip): ${noSingle}\n실패: ${failed}\n전체: ${pages.length}`;
+  console.log('▶ '+summary.replace(/\n/g,' | '));
+  if(fails.length)console.log('실패 목록',fails);
+  alert(summary);
+  return{applied,alreadyMulti,noSingle,failed,total:pages.length,fails};
+}
+window.migrateCrmSplitCallouts=migrateCrmSplitCallouts;
+async function clearCrmProperties(opts){
+  opts=opts||{};
+  const dryRun=!!opts.dryRun;
+  if(!S.token){alert('Notion 토큰 없음');return;}
+  if(!dryRun&&!confirm('CRM_DB 의 모든 카드의 18개 속성 값을 비웁니다. 콜아웃 데이터가 있는지 먼저 확인하세요. 진행할까요?'))return;
+  console.log('▶ CRM 속성 값 일괄 비우기 시작'+(dryRun?' (DRY RUN)':''));
+  let cursor=null,pages=[];
+  try{
+    do{
+      const body={page_size:100};if(cursor)body.start_cursor=cursor;
+      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
+      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
+    }while(cursor);
+  }catch(e){alert('DB query 실패: '+e.message);return;}
+  console.log(`전체 카드 ${pages.length}건`);
+  const numCols=['CVR','매출','열람수','주문건','지출','클릭수','톡채널 CTR','스마트스토어_발송수','스마트스토어_열람수','스마트스토어_클릭수','스마트스토어_구매건','스마트스토어_CVR','톡채널_발송수','톡채널_열람수','톡채널_클릭수','톡채널_구매건','톡채널_CVR'];
+  const txtCols=['CRM문구','스마트스토어','톡채널','스마트스토어 발송시각','톡채널 발송시각'];
+  const props={};
+  numCols.forEach(c=>{props[c]={number:null};});
+  txtCols.forEach(c=>{props[c]={rich_text:[]};});
+  let cleared=0,failed=0;const fails=[];
+  for(let i=0;i<pages.length;i++){
+    const pid=pages[i].id;
+    if(dryRun){cleared++;continue;}
+    try{
+      await notion('PATCH','/pages/'+pid,{properties:props});
+      cleared++;
+      if(i%5===0)console.log(`  · [${i+1}/${pages.length}] 진행 중...`);
+    }catch(e){failed++;fails.push({id:pid,err:e.message});console.error(`  ✗ ${pid.slice(0,8)}`,e.message);}
+    await new Promise(r=>setTimeout(r,180));
+  }
+  const summary=`속성 값 일괄 비우기 ${dryRun?'(DRY RUN)':'완료'}\n\n비움: ${cleared}\n실패: ${failed}\n전체: ${pages.length}`;
+  console.log('▶ '+summary.replace(/\n/g,' | '));
+  if(fails.length)console.log('실패 목록',fails);
+  alert(summary);
+  return{cleared,failed,total:pages.length,fails};
+}
+window.clearCrmProperties=clearCrmProperties;
 function autoExtractCrmDetail(){
   const d=S.crmDetail;if(!d)return;
   if(!d.blocks||!d.blocks.length){toast('Notion 본문이 없음',true);return;}
