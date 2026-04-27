@@ -388,6 +388,9 @@ async function openCrmDetail(id){
         if(b.type==='table'&&b.has_children){
           const r=await notion('GET',`/blocks/${b.id}/children?page_size=100`);
           b._children=r.results||[];
+        }else if(b.type==='callout'&&b.has_children){
+          const r=await notion('GET',`/blocks/${b.id}/children?page_size=100`);
+          b._children=r.results||[];
         }else if(b.type==='column_list'){
           const cols=await notion('GET',`/blocks/${b.id}/children?page_size=10`);
           b._children=cols.results||[];
@@ -398,6 +401,9 @@ async function openCrmDetail(id){
               if(item.type==='table'&&item.has_children){
                 const rows=await notion('GET',`/blocks/${item.id}/children?page_size=50`);
                 item._children=rows.results||[];
+              }else if(item.type==='callout'&&item.has_children){
+                const r=await notion('GET',`/blocks/${item.id}/children?page_size=100`);
+                item._children=r.results||[];
               }
             }));
           }));
@@ -407,6 +413,7 @@ async function openCrmDetail(id){
     if(S.crmDetail)S.crmDetail.blocks=blocks;
   }catch(e){if(S.crmDetail)S.crmDetail.blocks=[];}
   if(S.crmDetail){S.crmDetail.blocksLoading=false;render();}
+  if(S.crmDetail)syncCrmFromBlocks(S.crmDetail);
 }
 function closeCrmDetail(){
   const d=S.crmDetail;
@@ -437,8 +444,63 @@ function _parseCrmTable(tb,hint,out){
     else if(/구매건|구매|CVR/.test(h)){const n=_parseNum(v);const p=_parsePct(v);if(n!==null)out[pfx+'_orders']=n;if(p!==null)out[pfx+'_cvr']=p;}
   });
 }
+function _parseCompactRow(s,prefix,out){
+  const map=[
+    [/(?:발송|sends?)\s*=\s*([\d,]+)/i,'_sends'],
+    [/(?:열람|views?)\s*=\s*([\d,]+)/i,'_views'],
+    [/(?:클릭|clicks?)\s*=\s*([\d,]+)/i,'_clicks'],
+    [/(?:구매|orders?)\s*=\s*([\d,]+)/i,'_orders'],
+    [/cvr\s*=\s*([\d.]+)/i,'_cvr']
+  ];
+  for(const [re,suffix] of map){
+    const m=s.match(re);
+    if(m){const v=suffix==='_cvr'?Number(m[1]):Number(m[1].replace(/,/g,''));if(!isNaN(v))out[prefix+suffix]=v;}
+  }
+}
+function _parseCalloutData(callout,out){
+  const children=callout._children||[];
+  for(const c of children){
+    const line=_rtText(c);
+    if(!line)continue;
+    let m;
+    if((m=line.match(/^\s*ss[_\s]*send\s*[:：]\s*(.+?)\s*$/i))){out.ssSendTime=m[1].trim();continue;}
+    if((m=line.match(/^\s*tk[_\s]*send\s*[:：]\s*(.+?)\s*$/i))){out.tkSendTime=m[1].trim();continue;}
+    if((m=line.match(/^\s*ss[_\s]*sends\s*[:：]\s*([\d,]+)/i))){out.ss_sends=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*ss[_\s]*views\s*[:：]\s*([\d,]+)/i))){out.ss_views=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*ss[_\s]*clicks\s*[:：]\s*([\d,]+)/i))){out.ss_clicks=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*ss[_\s]*orders\s*[:：]\s*([\d,]+)/i))){out.ss_orders=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*ss[_\s]*cvr\s*[:：]\s*([\d.]+)/i))){out.ss_cvr=Number(m[1]);continue;}
+    if((m=line.match(/^\s*tk[_\s]*sends\s*[:：]\s*([\d,]+)/i))){out.tk_sends=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*tk[_\s]*views\s*[:：]\s*([\d,]+)/i))){out.tk_views=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*tk[_\s]*clicks\s*[:：]\s*([\d,]+)/i))){out.tk_clicks=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*tk[_\s]*orders\s*[:：]\s*([\d,]+)/i))){out.tk_orders=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*tk[_\s]*cvr\s*[:：]\s*([\d.]+)/i))){out.tk_cvr=Number(m[1]);continue;}
+    if((m=line.match(/^\s*(?:spend|지출)\s*[:：]\s*([\d,]+)/i))){out.spend=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*(?:revenue|매출)\s*[:：]\s*([\d,]+)/i))){out.revenue=Number(m[1].replace(/,/g,''));continue;}
+    if((m=line.match(/^\s*ss\s*[:：]\s*(.+)$/i))){_parseCompactRow(m[1],'ss_',out);continue;}
+    if((m=line.match(/^\s*tk\s*[:：]\s*(.+)$/i))){_parseCompactRow(m[1],'tk_',out);continue;}
+  }
+}
+function _isCrmDataCallout(b){
+  if(b.type!=='callout')return false;
+  const title=_rtText(b);
+  return /CRM\s*데이터|데이터/i.test(title);
+}
 function extractCrmFromBlocks(blocks){
   const out={};
+  // 1순위: 콜아웃 데이터 영역
+  let calloutFound=false;
+  const findCallout=arr=>{
+    for(const b of arr){
+      if(_isCrmDataCallout(b)){_parseCalloutData(b,out);calloutFound=true;}
+      if(b.type==='column_list'){
+        (b._children||[]).forEach(col=>findCallout(col._children||[]));
+      }
+    }
+  };
+  findCallout(blocks||[]);
+  if(calloutFound)return out;
+  // 2순위(폴백): 기존 자유 추출 (table + 헤더 텍스트)
   const walk=(arr,initHint)=>{
     let hint=initHint;
     for(const b of arr){
@@ -462,6 +524,84 @@ function extractCrmFromBlocks(blocks){
   walk(blocks||[],null);
   return out;
 }
+async function syncCrmFromBlocks(d){
+  if(!d||!d.blocks||!d.blocks.length)return;
+  const ex=extractCrmFromBlocks(d.blocks);
+  if(!Object.keys(ex).length)return;
+  const updates={};
+  for(const [k,v] of Object.entries(ex)){if(d[k]!==v)updates[k]=v;}
+  if(!Object.keys(updates).length)return;
+  Object.assign(d,updates);
+  const numProp=v=>({number:v!==null&&v!==undefined&&v!==''?Number(v):null});
+  const propMap={ssSendTime:'스마트스토어 발송시각',tkSendTime:'톡채널 발송시각',spend:'지출',revenue:'매출',ss_sends:'스마트스토어_발송수',ss_views:'스마트스토어_열람수',ss_clicks:'스마트스토어_클릭수',ss_orders:'스마트스토어_구매건',ss_cvr:'스마트스토어_CVR',tk_sends:'톡채널_발송수',tk_views:'톡채널_열람수',tk_clicks:'톡채널_클릭수',tk_orders:'톡채널_구매건',tk_cvr:'톡채널_CVR'};
+  const props={};
+  for(const [k,v] of Object.entries(updates)){
+    const pn=propMap[k];if(!pn)continue;
+    if(k==='ssSendTime'||k==='tkSendTime')props[pn]={rich_text:v?[{text:{content:String(v)}}]:[]};
+    else props[pn]=numProp(v);
+  }
+  if(!Object.keys(props).length)return;
+  try{
+    await notion('PATCH','/pages/'+d.id,{properties:props});
+    const ev=S.crmEvents.find(e=>e.id===d.id);if(ev)Object.assign(ev,updates);
+    if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,updates);}
+    if(S.crmDetail&&S.crmDetail.id===d.id)render();
+  }catch(e){toast('자동 동기화 실패: '+e.message,true);}
+}
+async function migrateCrmToCallout(opts){
+  opts=opts||{};
+  const dryRun=!!opts.dryRun;
+  if(!S.token){alert('Notion 토큰 없음 — 먼저 로그인하세요');return;}
+  console.log('▶ CRM 카드 → 콜아웃 역이주 시작'+(dryRun?' (DRY RUN — 실제 변경 없음)':''));
+  let cursor=null,pages=[];
+  try{
+    do{
+      const body={page_size:100};if(cursor)body.start_cursor=cursor;
+      const res=await notion('POST',`/databases/${CRM_DB}/query`,body);
+      pages=pages.concat(res.results||[]);cursor=res.has_more?res.next_cursor:null;
+    }while(cursor);
+  }catch(e){console.error('DB query 실패',e);alert('DB query 실패: '+e.message);return;}
+  console.log(`전체 카드 ${pages.length}건`);
+  let applied=0,skipped=0,empty=0,failed=0;const failures=[];
+  for(let i=0;i<pages.length;i++){
+    const p=pages[i];const pid=p.id;const props=p.properties;
+    const txt=k=>props[k]?.rich_text?.map(r=>r.plain_text||'').join('').trim()||null;
+    const num=k=>(props[k]?.number??null);
+    const data={};
+    const ss=txt('스마트스토어 발송시각');if(ss)data.ssSendTime=ss;
+    const tt=txt('톡채널 발송시각');if(tt)data.tkSendTime=tt;
+    const sp=num('지출');if(sp!=null)data.spend=sp;
+    const rv=num('매출');if(rv!=null)data.revenue=rv;
+    [['스마트스토어_발송수','ss_sends'],['스마트스토어_열람수','ss_views'],['스마트스토어_클릭수','ss_clicks'],['스마트스토어_구매건','ss_orders'],['스마트스토어_CVR','ss_cvr'],['톡채널_발송수','tk_sends'],['톡채널_열람수','tk_views'],['톡채널_클릭수','tk_clicks'],['톡채널_구매건','tk_orders'],['톡채널_CVR','tk_cvr']].forEach(([k,o])=>{const v=num(k);if(v!=null)data[o]=v;});
+    if(!Object.keys(data).length){empty++;console.log(`  · [${i+1}/${pages.length}] ${pid.slice(0,8)} 빈 카드 (skip)`);continue;}
+    try{
+      const r=await notion('GET',`/blocks/${pid}/children?page_size=100`);
+      const blocks=r.results||[];
+      const hasCallout=blocks.some(b=>{
+        if(b.type!=='callout')return false;
+        const t=(b.callout?.rich_text||[]).map(rt=>rt.plain_text||'').join('');
+        return /CRM\s*데이터|데이터/i.test(t);
+      });
+      if(hasCallout){skipped++;console.log(`  ⊘ [${i+1}/${pages.length}] ${pid.slice(0,8)} 이미 콜아웃 존재 (skip)`);continue;}
+      const lines=[];
+      if(data.ssSendTime)lines.push(`ss_send: ${data.ssSendTime}`);
+      if(data.tkSendTime)lines.push(`tk_send: ${data.tkSendTime}`);
+      ['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr','tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr','spend','revenue'].forEach(k=>{if(data[k]!=null)lines.push(`${k}: ${data[k]}`);});
+      const calloutChildren=lines.map(line=>({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:line}}]}}));
+      const callout={object:'block',type:'callout',callout:{rich_text:[{type:'text',text:{content:'📊 CRM 데이터 (자동 동기화 영역 — 수정 시 웹보드에 반영)'}}],icon:{type:'emoji',emoji:'📊'},color:'gray_background',children:calloutChildren}};
+      if(dryRun){applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 예정 (${lines.length}줄) [DRY]`);continue;}
+      await notion('PATCH',`/blocks/${pid}/children`,{children:[callout]});
+      applied++;console.log(`  ✓ [${i+1}/${pages.length}] ${pid.slice(0,8)} 적용 (${lines.length}줄)`);
+    }catch(e){failed++;failures.push({id:pid,err:e.message});console.error(`  ✗ [${i+1}/${pages.length}] ${pid.slice(0,8)}`,e.message);}
+    await new Promise(r=>setTimeout(r,180));
+  }
+  const summary=`CRM 역이주 ${dryRun?'(DRY RUN)':'완료'}\n\n적용: ${applied}\n이미 있음 (skip): ${skipped}\n빈 카드: ${empty}\n실패: ${failed}\n전체: ${pages.length}`;
+  console.log('▶ '+summary.replace(/\n/g,' | '));
+  if(failures.length)console.log('실패 목록',failures);
+  alert(summary);
+  return{applied,skipped,empty,failed,total:pages.length,failures};
+}
+window.migrateCrmToCallout=migrateCrmToCallout;
 function autoExtractCrmDetail(){
   const d=S.crmDetail;if(!d)return;
   if(!d.blocks||!d.blocks.length){toast('Notion 본문이 없음',true);return;}
@@ -484,28 +624,10 @@ async function saveCrmDetail(){
   if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
   S.crmDetail=null;render();
   try{
-    const numProp=v=>({number:v!==null&&v!==undefined&&v!==''?Number(v):null});
+    // 지표·시각·채널 메모는 본문 콜아웃에서 자동 동기화되므로 PATCH 대상에서 제외
     const props={
       '이름':{title:[{text:{content:d.title.trim()}}]},
       'CRM문구':{rich_text:d.crmText?[{text:{content:d.crmText}}]:[]},
-      '스마트스토어':{rich_text:d.smartStore?[{text:{content:d.smartStore}}]:[]},
-      '톡채널':{rich_text:d.talkChannel?[{text:{content:d.talkChannel}}]:[]},
-      '스마트스토어 발송시각':{rich_text:d.ssSendTime?[{text:{content:d.ssSendTime}}]:[]},
-      '톡채널 발송시각':{rich_text:d.tkSendTime?[{text:{content:d.tkSendTime}}]:[]},
-      '지출':numProp(d.spend),
-      '매출':numProp(d.revenue),
-      // 스마트스토어 채널 지표
-      '스마트스토어_발송수':numProp(d.ss_sends),
-      '스마트스토어_열람수':numProp(d.ss_views),
-      '스마트스토어_클릭수':numProp(d.ss_clicks),
-      '스마트스토어_구매건':numProp(d.ss_orders),
-      '스마트스토어_CVR':numProp(d.ss_cvr),
-      // 톡채널 지표
-      '톡채널_발송수':numProp(d.tk_sends),
-      '톡채널_열람수':numProp(d.tk_views),
-      '톡채널_클릭수':numProp(d.tk_clicks),
-      '톡채널_구매건':numProp(d.tk_orders),
-      '톡채널_CVR':numProp(d.tk_cvr),
     };
     await notion('PATCH','/pages/'+d.id,{properties:props});
     toast('저장됨');
@@ -1097,7 +1219,7 @@ async function doDel(id){
 function openMemo(id){
   const{t}=findTask(id);
   if(!t||t._p)return;
-  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,dirty:false};
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,editingCompletedAt:false,dirty:false};
   render();
   setTimeout(()=>{const el=document.getElementById('memo-ta');if(el)el.focus();},60);
 }
@@ -1106,8 +1228,35 @@ function closeMemo(){
   else{S.memoModal=null;render();}
 }
 function setMemoField(field,val){if(S.memoModal){S.memoModal[field]=val;S.memoModal.dirty=true;}}
-function isoToLocalInput(iso){if(!iso)return'';const d=new Date(iso);if(isNaN(d))return'';const p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
-function setMemoCompletedAt(localStr){if(!S.memoModal)return;if(!localStr){S.memoModal.completedAt=null;}else{const d=new Date(localStr);if(!isNaN(d))S.memoModal.completedAt=d.toISOString();}S.memoModal.dirty=true;}
+function startEditCompletedAt(){if(!S.memoModal)return;if(!S.memoModal.completedAt)S.memoModal.completedAt=S.memoModal.editedAt||new Date().toISOString();S.memoModal.editingCompletedAt=true;render();}
+function cancelEditCompletedAt(){if(!S.memoModal)return;S.memoModal.completedAt=S.memoModal.origCompletedAt;S.memoModal.editingCompletedAt=false;render();}
+function confirmEditCompletedAt(){if(!S.memoModal)return;S.memoModal.editingCompletedAt=false;render();}
+function setMemoCompletedAtMonth(v){if(!S.memoModal)return;const m=parseInt(v,10);if(isNaN(m)||m<1||m>12)return;const base=S.memoModal.completedAt?new Date(S.memoModal.completedAt):new Date();base.setMonth(m-1);S.memoModal.completedAt=base.toISOString();S.memoModal.dirty=true;}
+function setMemoCompletedAtDay(v){if(!S.memoModal)return;const d=parseInt(v,10);if(isNaN(d)||d<1||d>31)return;const base=S.memoModal.completedAt?new Date(S.memoModal.completedAt):new Date();base.setDate(d);S.memoModal.completedAt=base.toISOString();S.memoModal.dirty=true;}
+function revertCardToIncomplete(){if(!S.memoModal)return;const id=S.memoModal.id;S.memoModal=null;render();doToggle(id);}
+function rMemoCompletedRow(m){
+  const display=m.completedAt||m.editedAt;
+  const d=display?new Date(display):null;
+  if(m.editingCompletedAt){
+    const cur=m.completedAt?new Date(m.completedAt):new Date();
+    return`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">완료</span>
+      <input type="number" min="1" max="12" value="${cur.getMonth()+1}" oninput="setMemoCompletedAtMonth(this.value)" style="width:44px;background:#fff;border:1px solid #22c55e;border-radius:5px;padding:3px 6px;font-size:11px;color:#22c55e;font-weight:600;outline:none;text-align:center;font-family:inherit"/>
+      <span style="font-size:10px;color:#9b9794">월</span>
+      <input type="number" min="1" max="31" value="${cur.getDate()}" oninput="setMemoCompletedAtDay(this.value)" style="width:44px;background:#fff;border:1px solid #22c55e;border-radius:5px;padding:3px 6px;font-size:11px;color:#22c55e;font-weight:600;outline:none;text-align:center;font-family:inherit"/>
+      <span style="font-size:10px;color:#9b9794">일</span>
+      <button onclick="confirmEditCompletedAt()" style="margin-left:auto;background:#22c55e;border:none;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#fff;cursor:pointer">확인</button>
+      <button onclick="cancelEditCompletedAt()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#6b6762;cursor:pointer">취소</button>
+    </div>`;
+  }
+  if(!d)return'';
+  const isFallback=!m.completedAt&&!!m.editedAt;
+  return`<div style="display:flex;align-items:center;gap:6px">
+    <span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">완료</span>
+    <span style="font-size:11px;color:${isFallback?'#9b9794':'#22c55e'};font-weight:600" title="${isFallback?'정확한 완료시점이 기록되지 않은 카드 (최종 편집 시각 표시)':''}">${d.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}${isFallback?' *':''}</span>
+    <button onclick="startEditCompletedAt()" style="margin-left:auto;background:#f5f3ef;border:1px solid #e8e4de;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;color:#6b6762;cursor:pointer">수정</button>
+  </div>`;
+}
 function toggleMemoField(field,val){if(S.memoModal){S.memoModal[field]=S.memoModal[field]===val?'':val;S.memoModal.dirty=true;render();}}
 async function saveMemo(){
   if(!S.memoModal)return;
@@ -1151,7 +1300,10 @@ function rMemoModal(){
               style="width:100%;font-size:14px;font-weight:700;color:#1c1a17;line-height:1.4;background:transparent;border:none;border-bottom:1.5px solid transparent;outline:none;padding:0 0 2px;transition:border-color .15s"
               onfocus="this.style.borderBottomColor='#3b82f6'" onblur="this.style.borderBottomColor='transparent'"/>
           </div>
-          <button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            ${m.completed?`<button onclick="revertCardToIncomplete()" title="이 카드를 미완료 상태로 되돌립니다" style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;font-size:10px;font-weight:700;color:#b91c1c;cursor:pointer;line-height:1;white-space:nowrap">↺ 미완료로</button>`:''}
+            <button onclick="closeMemo()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;line-height:1">×</button>
+          </div>
         </div>
       </div>
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px">
@@ -1182,13 +1334,7 @@ function rMemoModal(){
         ${m.completed?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px">
           ${m.dateStr?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">업무일</span><span style="font-size:11px;color:#1c1a17;font-weight:600">${m.dateStr}</span></div>`:''}
           ${m.createdAt?`<div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">생성</span><span style="font-size:11px;color:#1c1a17">${new Date(m.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>`:''}
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="font-size:9px;font-weight:700;color:#9b9794;width:42px">완료</span>
-            <input type="datetime-local" value="${isoToLocalInput(m.completedAt)}" oninput="setMemoCompletedAt(this.value)"
-              style="flex:1;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:3px 6px;font-size:11px;color:#22c55e;font-weight:600;outline:none;font-family:inherit"
-              onfocus="this.style.borderColor='#22c55e'" onblur="this.style.borderColor='#e8e4de'"/>
-            ${m.completedAt?`<button onclick="setMemoCompletedAt('');render()" title="완료 시점 지우기" style="background:none;border:1px solid #e8e4de;border-radius:4px;width:20px;height:20px;font-size:11px;color:#9b9794;cursor:pointer;line-height:1;flex-shrink:0">×</button>`:''}
-          </div>
+          ${rMemoCompletedRow(m)}
         </div>`:''}
         <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">메모</div>
@@ -1284,48 +1430,47 @@ function rCrmDetailModal(){
         :d.blocks&&d.blocks.length?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:12px;margin-bottom:4px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
             <div style="font-size:10px;font-weight:700;color:#ef4444;letter-spacing:.5px">Notion 본문</div>
-            <button onclick="autoExtractCrmDetail()" title="본문에서 발송시각·성과지표를 하단 필드로 추출" style="background:#fff;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;color:#ef4444;cursor:pointer;white-space:nowrap">↓ 본문에서 자동 추출</button>
+            <span style="font-size:9px;color:#9b9794">📊 데이터 콜아웃 자동 동기화</span>
           </div>
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
         ${txtField('CRM문구','crmText','CRM 발송 문구…')}
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">발송 채널 및 성과</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+            <div style="font-size:10px;font-weight:700;color:#9b9794;letter-spacing:.5px">발송 채널 및 성과</div>
+            <span style="font-size:9px;color:#9b9794">읽기 전용 · 본문 콜아웃에서 자동 갱신</span>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${[
-              {ch:'ss',name:'스마트스토어',bg:'#f0fdf4',bd:'#bbf7d0',dot:'#22c55e',txt:'#15803d',memoF:'smartStore',timeF:'ssSendTime',ph:'19:55',fields:['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr']},
-              {ch:'tk',name:'톡채널',bg:'#eff6ff',bd:'#bfdbfe',dot:'#3b82f6',txt:'#1d4ed8',memoF:'talkChannel',timeF:'tkSendTime',ph:'20:00',fields:['tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr']}
+              {ch:'ss',name:'스마트스토어',bg:'#f0fdf4',bd:'#bbf7d0',dot:'#22c55e',txt:'#15803d',timeF:'ssSendTime',fields:['ss_sends','ss_views','ss_clicks','ss_orders','ss_cvr']},
+              {ch:'tk',name:'톡채널',bg:'#eff6ff',bd:'#bfdbfe',dot:'#3b82f6',txt:'#1d4ed8',timeF:'tkSendTime',fields:['tk_sends','tk_views','tk_clicks','tk_orders','tk_cvr']}
             ].map(c=>{
-              const act=d[c.memoF]||d[c.timeF]||c.fields.some(f=>d[f]!==null&&d[f]!==undefined&&d[f]!=='');
+              const act=d[c.timeF]||c.fields.some(f=>d[f]!==null&&d[f]!==undefined&&d[f]!=='');
+              const dispVal=v=>(v!==null&&v!==undefined&&v!=='')?String(v):'—';
               return `<div style="flex:1;min-width:220px;background:${act?c.bg:'#f9f8f6'};border:1px solid ${act?c.bd:'#e8e4de'};border-radius:8px;padding:10px">
                 <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
                   <span style="width:8px;height:8px;border-radius:50%;background:${act?c.dot:'#d1d5db'}"></span>
                   <span style="font-size:10px;font-weight:700;color:${act?c.txt:'#9b9794'}">${c.name}</span>
+                  <span style="font-size:9px;color:#9b9794;margin-left:auto">발송시각 ${esc(dispVal(d[c.timeF]))}</span>
                 </div>
-                <input value="${esc(d[c.timeF]||'')}" oninput="setCrmDetailField('${c.timeF}',this.value)" placeholder="발송시각 (예: ${c.ph})"
-                  style="width:100%;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;color:#1c1a17;outline:none;margin-bottom:4px"/>
-                <textarea oninput="setCrmDetailField('${c.memoF}',this.value)" placeholder="메모…"
-                  style="width:100%;min-height:32px;background:#fff;border:1px solid #e8e4de;border-radius:5px;padding:4px 8px;font-size:11px;line-height:1.4;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;margin-bottom:6px">${esc(d[c.memoF]||'')}</textarea>
                 <table style="width:100%;border-collapse:collapse;font-size:10px;text-align:center;background:#fff;border-radius:5px;overflow:hidden">
                   <tr style="background:#f9f8f6">${['발송','열람','클릭','구매','CVR'].map(h=>`<th style="border:1px solid #e8e4de;padding:4px 2px;font-weight:700;color:#9b9794;font-size:9px">${h}</th>`).join('')}</tr>
-                  <tr>${c.fields.map((f,i)=>`<td style="border:1px solid #e8e4de;padding:3px 2px"><input type="number"${i===4?' step="0.01"':''} value="${d[f]??''}" oninput="setCrmDetailField('${f}',this.value===''?null:Number(this.value))" style="width:100%;border:none;background:transparent;text-align:center;font-size:10px;color:#1c1a17;outline:none"/></td>`).join('')}</tr>
+                  <tr>${c.fields.map(f=>`<td style="border:1px solid #e8e4de;padding:5px 2px;color:#1c1a17;font-size:11px;font-weight:600">${esc(dispVal(d[f]))}</td>`).join('')}</tr>
                 </table>
               </div>`;
             }).join('')}
           </div>
         </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">공통 (합계)</div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">공통 (합계) · 읽기 전용</div>
           <div style="display:flex;gap:8px">
             <div style="flex:1">
               <div style="font-size:9px;color:#9b9794;margin-bottom:3px">지출</div>
-              <input type="number" value="${d.spend??''}" oninput="setCrmDetailField('spend',this.value===''?null:Number(this.value))"
-                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
+              <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;text-align:right;font-weight:600">${d.spend!==null&&d.spend!==undefined&&d.spend!==''?Number(d.spend).toLocaleString():'—'}</div>
             </div>
             <div style="flex:1">
               <div style="font-size:9px;color:#9b9794;margin-bottom:3px">매출</div>
-              <input type="number" value="${d.revenue??''}" oninput="setCrmDetailField('revenue',this.value===''?null:Number(this.value))"
-                style="width:100%;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;outline:none;text-align:right"/>
+              <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:6px 10px;font-size:12px;color:#1c1a17;text-align:right;font-weight:600">${d.revenue!==null&&d.revenue!==undefined&&d.revenue!==''?Number(d.revenue).toLocaleString():'—'}</div>
             </div>
           </div>
         </div>
