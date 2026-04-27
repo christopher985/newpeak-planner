@@ -901,6 +901,23 @@ async function uploadImageToCloudinary(file){
   if(!json.secure_url)throw new Error('Cloudinary 응답에 URL 없음');
   return json.secure_url;
 }
+function _collectCrmImages(blocks){
+  const out=[];
+  const walk=arr=>{
+    for(const b of arr){
+      if(b.type==='image'){
+        const u=b.image?.file?.url||b.image?.external?.url||'';
+        if(u)out.push(u);
+      }
+      if(b._children)walk(b._children);
+      if(b.type==='column_list'&&b._children){
+        b._children.forEach(col=>{if(col._children)walk(col._children);});
+      }
+    }
+  };
+  walk(blocks||[]);
+  return out;
+}
 let _crmImgUploading=false;
 async function attachImageToCrmCard(file){
   if(!S.crmDetail||!file)return;
@@ -908,7 +925,7 @@ async function attachImageToCrmCard(file){
   _crmImgUploading=true;
   const d=S.crmDetail;
   const targetId=(d.calloutIds&&d.calloutIds.image)||d.id;
-  toast('이미지 업로드 중...');
+  toast('이미지 업로드 중...');  // 가벼운 toast (DOM 직접, render 미호출)
   try{
     const url=await uploadImageToCloudinary(file);
     const imageBlock={object:'block',type:'image',image:{type:'external',external:{url}}};
@@ -1880,25 +1897,30 @@ function rCrmDetailModal(){
         </div>
       </div>
       <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
-        ${d.blocksLoading?`<div style="display:flex;align-items:center;justify-content:center;padding:16px;gap:8px"><div class="sp"></div><span style="font-size:11px;color:#9b9794">본문 불러오는 중…</span></div>`
-        :d.blocks&&d.blocks.length?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:12px;margin-bottom:4px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
-            <div style="font-size:10px;font-weight:700;color:#ef4444;letter-spacing:.5px">Notion 본문</div>
-            <span style="font-size:9px;color:#9b9794">📊 데이터 콜아웃 자동 동기화</span>
+        ${d.blocksLoading?`<div style="display:flex;align-items:center;justify-content:center;padding:16px;gap:8px"><div class="sp"></div><span style="font-size:11px;color:#9b9794">본문 불러오는 중…</span></div>`:''}
+        ${(()=>{
+          const imgs=_collectCrmImages(d.blocks||[]);
+          const others=(d.blocks||[]).filter(b=>b.type!=='image'&&b.type!=='callout');
+          const otherHtml=others.length?others.map(b=>renderBlock(b)).join('').trim():'';
+          return `
+          <div>
+            <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">📷 이미지</div>
+            ${imgs.length?`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">${imgs.map(u=>`<img src="${esc(u)}" loading="lazy" style="max-width:100%;border-radius:6px"/>`).join('')}</div>`:''}
+            <div onclick="document.getElementById('crm-img-input').click()"
+              ondragover="event.preventDefault();this.style.background='#fff5f5';this.style.borderColor='#ef4444'"
+              ondragleave="this.style.background='#f9f8f6';this.style.borderColor='#e8e4de'"
+              ondrop="event.preventDefault();this.style.background='#f9f8f6';this.style.borderColor='#e8e4de';if(event.dataTransfer.files[0])attachImageToCrmCard(event.dataTransfer.files[0])"
+              style="background:#f9f8f6;border:1.5px dashed #e8e4de;border-radius:8px;padding:12px;text-align:center;cursor:pointer;font-size:11px;color:#9b9794;transition:all .12s">
+              드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택
+            </div>
+            <input id="crm-img-input" type="file" accept="image/*" style="display:none" onchange="if(this.files[0])attachImageToCrmCard(this.files[0])"/>
           </div>
-          ${d.blocks.map(b=>renderBlock(b)).join('')}
-        </div>`:''}
-        <div>
-          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📷 이미지 첨부</div>
-          <div onclick="document.getElementById('crm-img-input').click()"
-            ondragover="event.preventDefault();this.style.background='#fff5f5';this.style.borderColor='#ef4444'"
-            ondragleave="this.style.background='#f9f8f6';this.style.borderColor='#e8e4de'"
-            ondrop="event.preventDefault();this.style.background='#f9f8f6';this.style.borderColor='#e8e4de';if(event.dataTransfer.files[0])attachImageToCrmCard(event.dataTransfer.files[0])"
-            style="background:#f9f8f6;border:1.5px dashed #e8e4de;border-radius:8px;padding:14px;text-align:center;cursor:pointer;font-size:11px;color:#9b9794;transition:all .12s">
-            드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택
-          </div>
-          <input id="crm-img-input" type="file" accept="image/*" style="display:none" onchange="if(this.files[0])attachImageToCrmCard(this.files[0])"/>
-        </div>
+          ${otherHtml?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:8px;padding:10px 12px;margin-bottom:4px">
+            <div style="font-size:9px;font-weight:700;color:#9b9794;letter-spacing:.5px;margin-bottom:6px">Notion 본문 (자유 콘텐츠)</div>
+            ${otherHtml}
+          </div>`:''}
+          `;
+        })()}
         <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📝 CRM문구</div>
           <textarea oninput="setCrmDetailField('crmText',this.value)" placeholder="CRM 발송 문구 (저장 시 본문 📝 콜아웃에 반영)"
@@ -2222,7 +2244,16 @@ function tCancel(){
   document.querySelectorAll('.row').forEach(r=>{r.style.opacity='';r.classList.remove('drag-over');});
   _tId=null;_tActive=false;
 }
-function toast(m,err){S.toast={m,err};render();setTimeout(()=>{S.toast=null;render();},err?5000:2400);}
+function toast(m,err){
+  S.toast={m,err};
+  // render() 호출 대신 DOM 직접 조작 (모달 깜빡임 방지)
+  let el=document.getElementById('_global_toast');
+  if(!el){el=document.createElement('div');el.id='_global_toast';document.body.appendChild(el);}
+  el.style.cssText=`position:fixed;bottom:20px;right:20px;z-index:9999;background:${err?'#fef2f2':'#f0fdf4'};border:1px solid ${err?'#fecaca':'#bbf7d0'};border-radius:8px;padding:10px 16px;font-size:12px;font-weight:600;color:${err?'#b91c1c':'#15803d'};box-shadow:0 4px 12px rgba(0,0,0,0.08);animation:fadeIn .2s ease`;
+  el.textContent=m;
+  if(toast._t)clearTimeout(toast._t);
+  toast._t=setTimeout(()=>{if(el)el.remove();S.toast=null;},err?5000:2400);
+}
 
 /* ══════════════════════════════════════
    캘린더
@@ -3170,11 +3201,7 @@ function render(){
   const isDesignTeam=S.team==='디자인';
   const isContentTeam=S.team==='콘텐츠';
 
-  const toastHtml=S.toast?`<div style="position:fixed;bottom:20px;right:20px;z-index:999;
-    background:${S.toast.err?'#fef2f2':'#f0fdf4'};border:1px solid ${S.toast.err?'#fecaca':'#bbf7d0'};
-    border-radius:8px;padding:10px 16px;font-size:12px;font-weight:600;
-    color:${S.toast.err?'#b91c1c':'#15803d'};animation:fadeIn .2s ease;box-shadow:0 4px 12px rgba(0,0,0,0.08)">${esc(S.toast.m)}</div>`:'';
-
+  // toast 는 #_global_toast 로 분리 표시 (render 와 무관, 깜빡임 방지)
   const mainContent=isDesignTeam
     ?rDesignLayout()
     :isContentTeam
@@ -3184,7 +3211,6 @@ function render(){
         :rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks);
 
   app.innerHTML=`
-    ${toastHtml}
     ${rTeamBar()}
     ${rHeader()}
     ${rCalendar()}
