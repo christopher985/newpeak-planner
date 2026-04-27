@@ -287,30 +287,11 @@ async function loadCrmEvents(){
       id:p.id,
       title:txt(p.properties['이름']),
       date:p.properties['날짜']?.date?.start||'',
-      crmText:txt(p.properties['CRM문구'])||'',
-      smartStore:txt(p.properties['스마트스토어'])||'',
-      talkChannel:txt(p.properties['톡채널'])||'',
-      spend:p.properties['지출']?.number??null,
-      revenue:p.properties['매출']?.number??null,
-      // 레거시 단일 지표 (신규 입력 안 함, 읽기만)
-      orders:p.properties['주문건']?.number??null,
-      views:p.properties['열람수']?.number??null,
-      clicks:p.properties['클릭수']?.number??null,
-      cvr:p.properties['CVR']?.number??null,
-      // 스마트스토어 채널 지표
-      ss_sends:p.properties['스마트스토어_발송수']?.number??null,
-      ss_views:p.properties['스마트스토어_열람수']?.number??null,
-      ss_clicks:p.properties['스마트스토어_클릭수']?.number??null,
-      ss_orders:p.properties['스마트스토어_구매건']?.number??null,
-      ss_cvr:p.properties['스마트스토어_CVR']?.number??null,
-      // 톡채널 지표
-      tk_sends:p.properties['톡채널_발송수']?.number??null,
-      tk_views:p.properties['톡채널_열람수']?.number??null,
-      tk_clicks:p.properties['톡채널_클릭수']?.number??null,
-      tk_orders:p.properties['톡채널_구매건']?.number??null,
-      tk_cvr:p.properties['톡채널_CVR']?.number??null,
-      ssSendTime:txt(p.properties['스마트스토어 발송시각'])||'',
-      tkSendTime:txt(p.properties['톡채널 발송시각'])||'',
+      // 카피·지표·시각·합계는 본문 콜아웃에서 백그라운드 로드 (loadCrmCalloutsAsync)
+      crmText:'',spend:null,revenue:null,
+      ss_sends:null,ss_views:null,ss_clicks:null,ss_orders:null,ss_cvr:null,
+      tk_sends:null,tk_views:null,tk_clicks:null,tk_orders:null,tk_cvr:null,
+      ssSendTime:'',tkSendTime:'',
     }));
     _crmLoaded=key;render();
     loadCrmCalloutsAsync(key);
@@ -884,11 +865,8 @@ async function saveCrmDetail(){
   if(S.crmModal){const mi=S.crmModal.items.find(e=>e.id===d.id);if(mi)Object.assign(mi,d);}
   S.crmDetail=null;render();
   try{
-    // 지표·시각·채널 메모는 본문 콜아웃에서 자동 동기화되므로 PATCH 대상에서 제외
-    const props={
-      '이름':{title:[{text:{content:d.title.trim()}}]},
-      'CRM문구':{rich_text:d.crmText?[{text:{content:d.crmText}}]:[]},
-    };
+    // 모든 데이터는 본문 콜아웃 단일 소스 — 속성에는 이름·날짜만 존재
+    const props={'이름':{title:[{text:{content:d.title.trim()}}]}};
     await notion('PATCH','/pages/'+d.id,{properties:props});
     toast('저장됨');
   }catch(e){
@@ -1694,7 +1672,13 @@ function rCrmDetailModal(){
           </div>
           ${d.blocks.map(b=>renderBlock(b)).join('')}
         </div>`:''}
-        ${txtField('CRM문구','crmText','CRM 발송 문구…')}
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:10px;font-weight:700;color:#9b9794;letter-spacing:.5px">📝 CRM문구</div>
+            <span style="font-size:9px;color:#9b9794">읽기 전용 · 본문 📝 문구 콜아웃에서 자동 갱신</span>
+          </div>
+          <div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:${d.crmText?'#1c1a17':'#9b9794'};min-height:50px;white-space:pre-wrap">${d.crmText?esc(d.crmText):'본문에 📝 CRM문구 콜아웃을 만들어 카피를 작성하세요.'}</div>
+        </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
             <div style="font-size:10px;font-weight:700;color:#9b9794;letter-spacing:.5px">발송 채널 및 성과</div>
