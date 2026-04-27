@@ -902,24 +902,33 @@ async function uploadImageToCloudinary(file){
   if(!json.secure_url)throw new Error('Cloudinary 응답에 URL 없음');
   return json.secure_url;
 }
+let _crmImgUploading=false;
 async function attachImageToCrmCard(file){
   if(!S.crmDetail||!file)return;
+  if(_crmImgUploading){toast('이미 업로드 중입니다',true);return;}
+  _crmImgUploading=true;
   const d=S.crmDetail;
   const targetId=(d.calloutIds&&d.calloutIds.image)||d.id;
   toast('이미지 업로드 중...');
   try{
     const url=await uploadImageToCloudinary(file);
     const imageBlock={object:'block',type:'image',image:{type:'external',external:{url}}};
-    await notion('PATCH','/blocks/'+targetId+'/children',{children:[imageBlock]});
+    const res=await notion('PATCH','/blocks/'+targetId+'/children',{children:[imageBlock]});
+    // 낙관적 업데이트: 모달 리로드 대신 메모리 blocks 에 추가 (입력 중인 textarea/input 값 보존)
+    const newBlock=res?.results?.[0]||{...imageBlock,id:'tmp-'+Date.now()};
+    if(S.crmDetail&&S.crmDetail.id===d.id){
+      const callout=(S.crmDetail.blocks||[]).find(b=>b.id===d.calloutIds?.image);
+      if(callout){callout._children=callout._children||[];callout._children.push(newBlock);}
+      else{S.crmDetail.blocks=S.crmDetail.blocks||[];S.crmDetail.blocks.push(newBlock);}
+      render();
+    }
     toast('✓ 이미지 첨부 완료');
-    // 본문 갱신을 위해 모달 재로드
-    const id=d.id;
-    S.crmDetail=null;render();
-    openCrmDetail(id);
   }catch(e){toast('이미지 첨부 실패: '+e.message,true);}
+  finally{_crmImgUploading=false;}
 }
 function handleCrmImagePaste(e){
   if(!S.crmDetail)return;
+  if(_crmImgUploading)return; // 업로드 중 중복 paste 차단
   const items=(e.clipboardData||window.clipboardData)?.items||[];
   for(const item of items){
     if(item.type&&item.type.startsWith('image/')){
