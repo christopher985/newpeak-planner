@@ -477,6 +477,7 @@ function closeCrmDetail(){
   render();
 }
 function setCrmDetailField(f,v){if(S.crmDetail)S.crmDetail[f]=v;}
+function _autoGrowCrmText(el){if(!el)return;el.style.height='auto';el.style.height=Math.min(el.scrollHeight+2,Math.floor(window.innerHeight*0.6))+'px';}
 /* ── 본문 → 속성 파서 (M3: 자동 추출) ── */
 function _rtText(b){const t=b?.type;return t&&b[t]?.rich_text?b[t].rich_text.map(r=>r.plain_text||'').join(''):'';}
 function _parseNum(s){const m=String(s||'').match(/-?[\d,]+(?:\.\d+)?/);return m?Number(m[0].replace(/,/g,'')):null;}
@@ -1043,8 +1044,9 @@ async function loadCarried(user){
   }catch(e){S.tasks[k]=[];}
   render();
 }
-async function loadMonthlyDone(user){
-  const y=S.calYear,m=S.calMonth;
+async function loadMonthlyDone(user,y,m){
+  if(y===undefined)y=S.calYear;
+  if(m===undefined)m=S.calMonth;
   const k=`done-${y}-${m}-${user}`;
   if(S.tasks[k]!==undefined)return;
   try{
@@ -1752,8 +1754,8 @@ function rCrmDetailModal(){
         })()}
         <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:4px;letter-spacing:.5px">📝 CRM문구</div>
-          <textarea oninput="setCrmDetailField('crmText',this.value)" placeholder="CRM 발송 문구 (저장 시 본문 📝 콜아웃에 반영)"
-            style="width:100%;min-height:60px;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:#1c1a17;outline:none;resize:vertical;font-family:inherit"
+          <textarea id="crm-text-area" oninput="setCrmDetailField('crmText',this.value);_autoGrowCrmText(this)" placeholder="CRM 발송 문구 (저장 시 본문 📝 콜아웃에 반영)"
+            style="width:100%;min-height:200px;max-height:60vh;field-sizing:content;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:#1c1a17;outline:none;resize:vertical;font-family:inherit;overflow-y:auto"
             onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'">${esc(d.crmText||'')}</textarea>
         </div>
         <div style="border-top:1px solid #e8e4de;padding-top:12px">
@@ -1954,7 +1956,10 @@ async function saveAddSched(){
 function setBrand(v){S.addBrand=v;_saveInput();}
 function setArea(v){S.addArea=S.addArea===v?null:v;_saveInput();}
 function _saveInput(){const e=document.getElementById('ti');S._ti=e?e.value:'';}
-function _restoreInput(){const e=document.getElementById('ti');if(e&&S._ti){e.value=S._ti;e.focus();}}
+function _restoreInput(){const e=document.getElementById('ti');if(e&&S._ti){e.value=S._ti;e.focus();}
+  // CRM 문구 textarea 초기 표시 시점에도 auto-grow 적용 (모달 열기 직후 한 화면에 카피 전체 보이게)
+  const ct=document.getElementById('crm-text-area');if(ct)_autoGrowCrmText(ct);
+}
 function setIncSort(v){S.incSort=v;render();}
 function sortInc(arr){
   const s=S.incSort;
@@ -2279,7 +2284,7 @@ function tRow(t,ac,dim){
       </div>
       ${hasTags?`<div style="display:flex;justify-content:flex-end">${tagsHtml}</div>`:''}
     </div>
-    ${dim?(()=>{const dt=t.completedAt||t.editedAt;return dt?`<span style="font-size:11px;color:#15803d;font-weight:800;flex-shrink:0;align-self:center;letter-spacing:.3px">${fmtCreated(dt)}</span>`:'';})():''}
+    ${dim?(()=>{const dt=t.completedAt||t.editedAt;return dt?`<span style="font-size:8px;color:#15803d;font-weight:800;flex-shrink:0;align-self:flex-end;letter-spacing:.3px">완료 ${fmtCreated(dt)}</span>`:'';})():''}
     ${t._p?`<div class="sp" style="flex-shrink:0"></div>`:`<button onclick="del('${t.id}')" style="background:none;border:none;cursor:pointer;color:#b0ada8;font-size:14px;padding:2px;flex-shrink:0;opacity:.6;line-height:1">×</button>`}
   </div>`;
 }
@@ -2387,6 +2392,8 @@ function rSched(sched){
 ══════════════════════════════════════ */
 function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
   const dateTitle=fmtDateKr(S.selectedDate);
+  const _wk=weekRange(S.selectedDate);
+  const wkLabel=`${fmtDate(_wk.s)}~${fmtDate(_wk.e)}`;
   const skeletons=`<div class="sk" style="height:52px;margin-bottom:7px"></div><div class="sk" style="height:52px;margin-bottom:7px;opacity:.7"></div><div class="sk" style="height:52px;opacity:.4"></div>`;
 
   // 중간 컬럼 — 추가 입력 + 고정업무
@@ -2485,6 +2492,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:3px;height:14px;border-radius:2px;background:#22c55e;display:inline-block"></span>
           <span style="font-size:12px;font-weight:800;color:#1c1a17">이번주 완료</span>
+          <span style="font-size:11px;color:#9b9794;font-weight:600;letter-spacing:.2px">${wkLabel}</span>
           ${dn.length?`<span style="font-size:10px;background:#22c55e18;color:#15803d;border-radius:8px;padding:2px 7px;font-weight:700">${dn.length}</span>`:''}
         </div>
         ${dn.length?`<button onclick="clearDone()" style="background:none;border:1px solid #e8e4de;border-radius:5px;padding:3px 8px;font-size:9px;color:#9b9794;cursor:pointer">전체 삭제</button>`:''}
@@ -2499,6 +2507,8 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
 ══════════════════════════════════════ */
 function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
   const all=[...inc,...dn];
+  const _wk=weekRange(S.selectedDate);
+  const wkLabel=`${fmtDate(_wk.s)}~${fmtDate(_wk.e)}`;
   return`<div class="default-layout">
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -2526,7 +2536,7 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
           <div style="font-size:13px;color:#9b9794">이 날 등록된 업무가 없어요.</div>
         </div>`:''}
         ${inc.map(t=>tRow(t,ac,false)).join('')}
-        ${dn.length?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e8e4de"></div><span style="font-size:10px;color:#b0ada8;font-weight:700">이번주 완료 ${dn.length}건</span><div style="flex:1;height:1px;background:#e8e4de"></div></div>`:''}
+        ${dn.length?`<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e8e4de"></div><span style="font-size:10px;color:#b0ada8;font-weight:700">이번주 완료 <span style="color:#9b9794;font-weight:600">${wkLabel}</span> · ${dn.length}건</span><div style="flex:1;height:1px;background:#e8e4de"></div></div>`:''}
         ${dn.map(t=>tRow(t,ac,true)).join('')}
       </div>
     </div>
@@ -3012,9 +3022,20 @@ function render(){
     return curWeekday?s.weekday===curWeekday:false;
   });
   let inc=tasks.filter(t=>!t.completed);
-  const monthlyDoneKey=`done-${S.calYear}-${S.calMonth}-${S.user}`;
   const {s:_wkS,e:_wkE}=weekRange(S.selectedDate);
-  const monthly=S.tasks[monthlyDoneKey]||[];
+  const _wkSY=parseInt(_wkS.split('-')[0],10),_wkSM=parseInt(_wkS.split('-')[1],10)-1;
+  const _wkEY=parseInt(_wkE.split('-')[0],10),_wkEM=parseInt(_wkE.split('-')[1],10)-1;
+  // 주 범위가 캘린더 월과 다르거나 두 달에 걸칠 때 보조 월 로드
+  if(S.team!=='디자인'&&S.team!=='콘텐츠'){
+    if(_wkSY!==S.calYear||_wkSM!==S.calMonth)loadMonthlyDone(S.user,_wkSY,_wkSM);
+    if(_wkEY!==_wkSY||_wkEM!==_wkSM)loadMonthlyDone(S.user,_wkEY,_wkEM);
+  }
+  const monthlyKeys=new Set([
+    `done-${S.calYear}-${S.calMonth}-${S.user}`,
+    `done-${_wkSY}-${_wkSM}-${S.user}`,
+    `done-${_wkEY}-${_wkEM}-${S.user}`,
+  ]);
+  const monthly=[...monthlyKeys].flatMap(k=>S.tasks[k]||[]);
   const todayDone=tasks.filter(t=>t.completed);
   const seen=new Set();
   const dn=[...todayDone,...monthly].filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return x.dateStr&&x.dateStr>=_wkS&&x.dateStr<=_wkE;}).sort((a,b)=>{const ax=a.completedAt||a.editedAt||'';const bx=b.completedAt||b.editedAt||'';return bx.localeCompare(ax);});
