@@ -11,7 +11,11 @@ if [ ! -f "$TOKEN_FILE" ]; then
   exit 1
 fi
 
-TOKEN=$(cat "$TOKEN_FILE" | tr -d '[:space:]')
+TOKEN=$(grep -m1 '^ghp_' "$TOKEN_FILE" | tr -d '[:space:]')
+if [ -z "$TOKEN" ]; then
+  echo "❌ token.txt 에서 GitHub PAT (ghp_ 로 시작) 을 찾을 수 없습니다"
+  exit 1
+fi
 MSG="${1:-update}"
 
 cd "$PROJECT_DIR"
