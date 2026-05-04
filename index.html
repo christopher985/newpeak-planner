@@ -1955,6 +1955,7 @@ async function saveAddSched(){
 }
 function setBrand(v){S.addBrand=v;_saveInput();}
 function setArea(v){S.addArea=S.addArea===v?null:v;_saveInput();}
+function setColor(v){S.addColor=S.addColor===v?null:v;_saveInput();}
 function _saveInput(){const e=document.getElementById('ti');S._ti=e?e.value:'';}
 function _restoreInput(){const e=document.getElementById('ti');if(e&&S._ti){e.value=S._ti;e.focus();}
   // CRM 문구 textarea 초기 표시 시점에도 auto-grow 적용 (모달 열기 직후 한 화면에 카피 전체 보이게)
@@ -2422,7 +2423,7 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
       <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:8px;letter-spacing:.5px">카드 색상</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
-        ${CARD_COLORS.map(c=>{const sel=S.addColor===c.name;return`<button onclick="S.addColor=S.addColor==='${c.name}'?null:'${c.name}';render()"
+        ${CARD_COLORS.map(c=>{const sel=S.addColor===c.name;return`<button onclick="setColor('${c.name}');render()"
           style="width:24px;height:24px;border-radius:6px;cursor:pointer;transition:all .12s;
           background:${c.bg};border:2px solid ${sel?c.dot:c.border};box-shadow:${sel?'0 0 0 2px '+c.dot+'44':'none'}"
           title="${c.name}"></button>`;}).join('')}
