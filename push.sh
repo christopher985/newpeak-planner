@@ -23,4 +23,10 @@ git remote set-url origin "https://christopher985:${TOKEN}@github.com/${REPO}.gi
 git add .
 git commit -m "$MSG"
 git push origin main
-echo "✅ DONE — Netlify 자동 배포 시작됨"
+PUSH_EXIT=$?
+if [ $PUSH_EXIT -eq 0 ]; then
+  echo "✅ DONE — Netlify 자동 배포 시작됨"
+else
+  echo "❌ git push 실패 (exit=$PUSH_EXIT)"
+  exit $PUSH_EXIT
+fi
