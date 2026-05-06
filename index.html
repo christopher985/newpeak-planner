@@ -745,15 +745,88 @@ async function attachImageToCrmCard(file){
   finally{_crmImgUploading=false;}
 }
 function handleCrmImagePaste(e){
-  if(!S.crmDetail)return;
-  if(_crmImgUploading)return; // 업로드 중 중복 paste 차단
+  // CRM 모달 또는 task 메모 모달 둘 중 하나 열렸을 때만 동작
+  if(!S.crmDetail&&!S.memoModal)return;
+  if(_crmImgUploading||_memoImgUploading)return; // 업로드 중 중복 paste 차단
+  // 완료 카드는 읽기 전용 → 첨부 비활성화
+  if(S.memoModal&&S.memoModal.completed)return;
   const items=(e.clipboardData||window.clipboardData)?.items||[];
   for(const item of items){
     if(item.type&&item.type.startsWith('image/')){
       const file=item.getAsFile();
-      if(file){e.preventDefault();attachImageToCrmCard(file);return;}
+      if(file){
+        e.preventDefault();
+        if(S.crmDetail)attachImageToCrmCard(file);
+        else if(S.memoModal)attachImageToMemoCard(file);
+        return;
+      }
     }
   }
+}
+let _memoImgUploading=false;
+let _memoImgDeleting=false;
+async function loadMemoImages(id){
+  try{
+    const res=await notion('GET',`/blocks/${id}/children?page_size=100`);
+    const blocks=res.results||[];
+    if(S.memoModal&&S.memoModal.id===id){
+      S.memoModal._images=_collectCrmImages(blocks);
+      S.memoModal._imagesLoading=false;
+      render();
+    }
+  }catch(e){
+    if(S.memoModal&&S.memoModal.id===id){
+      S.memoModal._images=[];
+      S.memoModal._imagesLoading=false;
+      render();
+    }
+  }
+}
+async function attachImageToMemoCard(file){
+  if(!S.memoModal||!file)return;
+  if(S.memoModal.completed){toast('완료 카드에는 이미지를 추가할 수 없습니다',true);return;}
+  if(_memoImgUploading){toast('이미 업로드 중입니다',true);return;}
+  _memoImgUploading=true;
+  const id=S.memoModal.id;
+  toast('이미지 업로드 중...');
+  try{
+    const url=await uploadImageToCloudinary(file);
+    const imageBlock={object:'block',type:'image',image:{type:'external',external:{url}}};
+    let res=null,attempt=0,lastErr=null;
+    while(attempt<3){
+      try{res=await notion('PATCH','/blocks/'+id+'/children',{children:[imageBlock]});break;}
+      catch(e){lastErr=e;attempt++;if(attempt<3)await new Promise(r=>setTimeout(r,500*attempt));}
+    }
+    if(!res){
+      console.warn('Notion PATCH 실패. Cloudinary URL:',url);
+      throw new Error((lastErr?.message||'unknown')+'. 업로드된 URL 콘솔 참조');
+    }
+    const newBlock=res?.results?.[0]||{...imageBlock,id:'tmp-'+Date.now()};
+    if(S.memoModal&&S.memoModal.id===id){
+      S.memoModal._images=S.memoModal._images||[];
+      const u=newBlock.image?.file?.url||newBlock.image?.external?.url||url;
+      S.memoModal._images.push({url:u,id:newBlock.id});
+      render();
+    }
+    toast('✓ 이미지 첨부 완료');
+  }catch(e){toast('이미지 첨부 실패: '+e.message,true);}
+  finally{_memoImgUploading=false;}
+}
+async function deleteMemoImage(blockId){
+  if(_memoImgDeleting){toast('삭제 중입니다',true);return;}
+  if(!blockId)return;
+  if(!confirm('이미지를 삭제할까요?'))return;
+  _memoImgDeleting=true;
+  toast('이미지 삭제 중...');
+  try{
+    await notion('PATCH','/blocks/'+blockId,{archived:true});
+    if(S.memoModal&&S.memoModal._images){
+      S.memoModal._images=S.memoModal._images.filter(im=>im.id!==blockId);
+      render();
+    }
+    toast('✓ 이미지 삭제 완료');
+  }catch(e){toast('이미지 삭제 실패: '+e.message,true);}
+  finally{_memoImgDeleting=false;}
 }
 function serializeCrmToMd(d){
   const lines=[];
@@ -1514,8 +1587,9 @@ async function doDel(id){
 function openMemo(id){
   const{t}=findTask(id);
   if(!t||t._p)return;
-  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,editingCompletedAt:false,dirty:false};
+  S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,editingCompletedAt:false,dirty:false,_images:[],_imagesLoading:true};
   render();
+  loadMemoImages(id);
   setTimeout(()=>{const el=document.getElementById('memo-ta');if(el)el.focus();},60);
 }
 function closeMemo(){
@@ -1586,7 +1660,7 @@ function rMemoModal(){
   const isPerfTeam=S.team==='퍼포먼스';
   const bc=m.brand?BRAND_COLOR[m.brand]||'#9b9794':null;
   const ac2=m.area?AREA_COLOR[m.area]||'#9b9794':null;
-  return`<div onclick="if(event.target===this)closeMemo()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768)closeMemo()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
@@ -1632,6 +1706,23 @@ function rMemoModal(){
           ${rMemoCompletedRow(m)}
         </div>`:''}
         <div>
+          <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:6px;letter-spacing:.5px">📷 이미지</div>
+          ${m._imagesLoading?`<div style="display:flex;align-items:center;gap:6px;padding:8px 0"><div class="sp"></div><span style="font-size:11px;color:#9b9794">이미지 불러오는 중…</span></div>`:''}
+          ${(m._images&&m._images.length)?`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:${m.completed?'0':'8px'}">${m._images.map(img=>`<div style="position:relative">
+            <img src="${esc(img.url)}" loading="lazy" style="max-width:100%;border-radius:6px;display:block"/>
+            ${m.completed?'':`<button onclick="deleteMemoImage('${img.id}')" title="이미지 삭제" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.65);border:none;border-radius:50%;width:24px;height:24px;font-size:13px;color:#fff;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>`}
+          </div>`).join('')}</div>`:''}
+          ${m.completed?'':`<div onclick="document.getElementById('memo-img-input').click()"
+            ondragover="event.preventDefault();this.style.background='#eef2ff';this.style.borderColor='#3b82f6'"
+            ondragleave="this.style.background='#f9f8f6';this.style.borderColor='#e8e4de'"
+            ondrop="event.preventDefault();this.style.background='#f9f8f6';this.style.borderColor='#e8e4de';if(event.dataTransfer.files[0])attachImageToMemoCard(event.dataTransfer.files[0])"
+            style="background:#f9f8f6;border:1.5px dashed #e8e4de;border-radius:8px;padding:12px;text-align:center;cursor:pointer;font-size:11px;color:#9b9794;transition:all .12s">
+            ${/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)?'클릭하여 카메라/갤러리에서 선택':'드래그 · Ctrl+V 붙여넣기 · 클릭하여 파일 선택'}
+          </div>
+          <input id="memo-img-input" type="file" accept="image/*" style="display:none" onchange="if(this.files[0])attachImageToMemoCard(this.files[0])"/>`}
+          ${m.completed&&!m._imagesLoading&&!(m._images&&m._images.length)?`<div style="font-size:11px;color:#b0ada8;padding:4px 0">첨부된 이미지 없음</div>`:''}
+        </div>
+        <div>
           <div style="font-size:10px;font-weight:700;color:#9b9794;margin-bottom:5px;letter-spacing:.5px">메모</div>
           ${m.completed
             ?`<div style="background:#f9f8f6;border:1px solid #e8e4de;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;color:#1c1a17;min-height:60px;white-space:pre-wrap">${m.memo?esc(m.memo):'<span style="color:#9b9794">메모 없음</span>'}</div>`
@@ -1655,7 +1746,7 @@ function rCrmModal(){
   const [,mm,dd]=ds.split('-');
   const dow=['일','월','화','수','목','금','토'][new Date(ds+'T00:00:00Z').getUTCDay()];
   const dateLabel=`${parseInt(mm)}월 ${parseInt(dd)}일 ${dow}요일`;
-  return`<div onclick="if(event.target===this)closeCrmModal()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768)closeCrmModal()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
         <div style="display:flex;align-items:center;justify-content:space-between">
@@ -1706,7 +1797,7 @@ function rCrmDetailModal(){
       style="width:100%;min-height:50px;background:#f9f8f6;border:1px solid #e8e4de;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.5;color:#1c1a17;outline:none;resize:vertical;font-family:inherit"
       onfocus="this.style.borderColor='#ef4444'" onblur="this.style.borderColor='#e8e4de'">${esc(d[field]||'')}</textarea>
   </div>`;
-  return`<div onclick="if(event.target===this)closeCrmDetail()" style="position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768)closeCrmDetail()" style="position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
@@ -1810,7 +1901,7 @@ function rCrmDetailModal(){
 function rSchedEditModal(){
   if(!S.editingSched)return'';
   const e=S.editingSched;
-  return`<div onclick="if(event.target===this){cancelEditSched()}" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768){cancelEditSched()}" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;display:flex;align-items:center;justify-content:space-between">
         <div style="font-size:14px;font-weight:700;color:#1c1a17">고정업무 수정</div>
@@ -2727,7 +2818,7 @@ function rDesignDetailModal(){
     :`<button onclick="toggleDesignEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#9b9794;flex-shrink:0;line-height:1" title="수정">✎</button>
       <button onclick="closeDesignDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>`;
 
-  return`<div onclick="if(event.target===this)closeDesignDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768)closeDesignDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;flex-shrink:0">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
@@ -2920,7 +3011,7 @@ function rContentDetailModal(){
     :`<button onclick="toggleContentEdit()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#9b9794;flex-shrink:0;line-height:1" title="수정">✎</button>
       <button onclick="closeContentDetail()" style="background:#f5f3ef;border:1px solid #e8e4de;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#9b9794;flex-shrink:0;line-height:1">×</button>`;
 
-  return`<div onclick="if(event.target===this)closeContentDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
+  return`<div onclick="if(event.target===this&&window.innerWidth<=768)closeContentDetail()" style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .15s ease">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.18);overflow:hidden">
       <div style="padding:16px 18px 12px;border-bottom:1px solid #e8e4de;flex-shrink:0">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
