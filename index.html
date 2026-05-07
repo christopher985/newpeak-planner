@@ -997,6 +997,20 @@ function weekRange(ds){
   const fmt=x=>`${x.getUTCFullYear()}-${String(x.getUTCMonth()+1).padStart(2,'0')}-${String(x.getUTCDate()).padStart(2,'0')}`;
   return{s:fmt(s),e:fmt(e)};
 }
+function isoToKSTDateStr(iso){
+  if(!iso)return null;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(iso))return iso;
+  const d=new Date(iso);
+  if(isNaN(d))return null;
+  const k=new Date(d.getTime()+9*36e5);
+  return`${k.getUTCFullYear()}-${String(k.getUTCMonth()+1).padStart(2,'0')}-${String(k.getUTCDate()).padStart(2,'0')}`;
+}
+function taskDoneDateStr(t){
+  return isoToKSTDateStr(t?.completedAt)||isoToKSTDateStr(t?.editedAt)||t?.dateStr||null;
+}
+function clearDoneCaches(user){
+  Object.keys(S.tasks).forEach(k=>{if(k.startsWith('done-')&&k.endsWith(`-${user}`))delete S.tasks[k];});
+}
 
 const _savedTeam = localStorage.getItem(TEAM_KEY)||'퍼포먼스';
 let S = {
@@ -1123,19 +1137,32 @@ async function loadMonthlyDone(user,y,m){
   const k=`done-${y}-${m}-${user}`;
   if(S.tasks[k]!==undefined)return;
   try{
+    const fmt=x=>`${x.getUTCFullYear()}-${String(x.getUTCMonth()+1).padStart(2,'0')}-${String(x.getUTCDate()).padStart(2,'0')}`;
     const tMin=`${y}-${String(m+1).padStart(2,'0')}-01`;
-    const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();
-    const tMax=`${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+    const tNext=`${m===11?y+1:y}-${String(m===11?1:m+2).padStart(2,'0')}-01`;
+    const qMin=fmt(new Date(Date.UTC(y,m,1)-86400000));
+    const qNext=fmt(new Date(Date.UTC(y,m+1,1)+86400000));
     const res=await notion('POST',`/databases/${TASKS_DB}/query`,{
       filter:{and:[
         {property:'완료',checkbox:{equals:true}},
+        {property:'완료시점',date:{on_or_after:qMin}},
+        {property:'완료시점',date:{before:qNext}},
+        {property:'담당자',select:{equals:user}},
+      ]},
+      sorts:[{property:'완료시점',direction:'descending'}],
+    });
+    const fallback=await notion('POST',`/databases/${TASKS_DB}/query`,{
+      filter:{and:[
+        {property:'완료',checkbox:{equals:true}},
+        {property:'완료시점',date:{is_empty:true}},
         {property:'날짜',date:{on_or_after:tMin}},
-        {property:'날짜',date:{on_or_before:tMax}},
+        {property:'날짜',date:{before:tNext}},
         {property:'담당자',select:{equals:user}},
       ]},
       sorts:[{property:'날짜',direction:'descending'}],
     });
-    S.tasks[k]=res.results.map(mapTask);
+    const seen=new Set();
+    S.tasks[k]=[...res.results,...fallback.results].filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;}).map(mapTask);
   }catch(e){S.tasks[k]=[];}
   render();
 }
@@ -1544,14 +1571,15 @@ async function _doToggleInner(id){
   // 이월 카드 완료 → carried에서 제거, 현재 날짜 완료 목록으로 이동
   if(nv&&isCarried){
     S.tasks[k]=(S.tasks[k]||[]).filter(x=>x.id!==id);
-    const todayK=`${S.selectedDate}-${S.user}`;
+    const doneDate=todayStr();
+    const todayK=`${doneDate}-${S.user}`;
     const nowIso=new Date().toISOString();
-    const moved={...t,completed:true,carried:false,completedAt:nowIso};
+    const moved={...t,completed:true,carried:false,completedAt:nowIso,dateStr:doneDate};
     (S.tasks[todayK]=S.tasks[todayK]||[]).push(moved);
     if(S.dropZone[todayK])S.dropZone[todayK]=S.dropZone[todayK].filter(x=>x!==id);
     render();
-    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:S.selectedDate}},'완료시점':{date:{start:nowIso}}}});
-      delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);
+    try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:true},'날짜':{date:{start:doneDate}},'완료시점':{date:{start:nowIso}}}});
+      clearDoneCaches(S.user);loadMonthlyDone(S.user);
     }catch(e){
       S.tasks[todayK]=(S.tasks[todayK]||[]).filter(x=>x.id!==id);
       (S.tasks[k]=S.tasks[k]||[]).push(t);
@@ -1566,7 +1594,7 @@ async function _doToggleInner(id){
   render();
   try{await notion('PATCH',`/pages/${id}`,{properties:{'완료':{checkbox:nv},'완료시점':nv?{date:{start:t.completedAt}}:{date:null}}});
     if(S.team!=='디자인'&&S.team!=='콘텐츠'){
-      delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);
+      clearDoneCaches(S.user);loadMonthlyDone(S.user);
       // 완료 → 미완료 되돌리기: 카드가 과거 날짜라면 carried 캐시 재로드 필요 (미래 selectedDate 의 carried 섹션에 노출)
       if(!nv&&S.team==='퍼포먼스'){
         delete S.tasks[`carried-${S.user}`];
@@ -1651,7 +1679,7 @@ async function saveMemo(){
       props['완료시점']=m.completedAt?{date:{start:m.completedAt}}:{date:null};
     }
     await notion('PATCH',`/pages/${m.id}`,{properties:props});
-    if(completedAtChanged&&S.team!=='디자인'&&S.team!=='콘텐츠'){delete S.tasks[`done-${S.calYear}-${S.calMonth}-${S.user}`];loadMonthlyDone(S.user);}
+    if(completedAtChanged&&S.team!=='디자인'&&S.team!=='콘텐츠'){clearDoneCaches(S.user);loadMonthlyDone(S.user);}
   }catch(e){Object.assign(t,prev);toast('저장 실패: '+e.message,true);render();}
 }
 function rMemoModal(){
@@ -3130,7 +3158,13 @@ function render(){
   const monthly=[...monthlyKeys].flatMap(k=>S.tasks[k]||[]);
   const todayDone=tasks.filter(t=>t.completed);
   const seen=new Set();
-  const dn=[...todayDone,...monthly].filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return x.dateStr&&x.dateStr>=_wkS&&x.dateStr<=_wkE;}).sort((a,b)=>{const ax=a.completedAt||a.editedAt||'';const bx=b.completedAt||b.editedAt||'';return bx.localeCompare(ax);});
+  const dn=[...todayDone,...monthly].filter(x=>{
+    const doneDate=taskDoneDateStr(x);
+    if(!doneDate||doneDate<_wkS||doneDate>_wkE)return false;
+    if(seen.has(x.id))return false;
+    seen.add(x.id);
+    return true;
+  }).sort((a,b)=>{const ax=a.completedAt||a.editedAt||a.dateStr||'';const bx=b.completedAt||b.editedAt||b.dateStr||'';return bx.localeCompare(ax);});
   // 오늘 이후 날짜: 과거 미완료 이월
   if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
     const carried=S.tasks['carried-'+S.user]||[];
@@ -3195,6 +3229,7 @@ function selectDate(ds){
   render();
   loadTasksByDate(ds,S.user);
   setTimeout(()=>loadSched(S.user),400);
+  if(S.team!=='디자인'&&S.team!=='콘텐츠')loadMonthlyDone(S.user);
   setTimeout(()=>{const e=document.getElementById('ti');if(e)e.focus();},60);
 }
 function moveMonth(dir){
@@ -3210,6 +3245,7 @@ function goToday(){
   S.selectedDate=todayStr();render();
   loadTasksByDate(S.selectedDate,S.user);
   setTimeout(()=>loadSched(S.user),400);
+  if(S.team!=='디자인'&&S.team!=='콘텐츠')loadMonthlyDone(S.user);
   loadYtEvents();
 }
 function addTask(){

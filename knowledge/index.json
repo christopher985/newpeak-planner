@@ -1,0 +1,237 @@
+{
+  "project": {
+    "name": "Newpeak Todo Webboard",
+    "domain": "Notion-linked team todo board",
+    "primary_goal": "Newpeak team members can view, create, complete, and track operational tasks from one lightweight web app.",
+    "current_stage": "operation-stabilization",
+    "architecture_style": "IDA + SDA compatible subset",
+    "last_architecture_update": "2026-05-07"
+  },
+  "truth_sources": {
+    "agent_rules": "AGENTS.md",
+    "claude_compat_rules": "CLAUDE.md",
+    "architecture": "knowledge/architecture/main.md",
+    "session_ledger": "knowledge/workflow/session_ledger.md",
+    "weakness_log": "knowledge/workflow/weakness_log.md",
+    "domain_glossary": "knowledge/workflow/domain_glossary.md"
+  },
+  "architecture_decisions": {
+    "single_file_frontend": {
+      "status": "active",
+      "decision": "Keep index.html as the frontend execution unit.",
+      "reason": "Project has no frontend build pipeline, and existing project rules forbid CSS/JS splitting."
+    },
+    "ida_master_index": {
+      "status": "active",
+      "decision": "Use this file as the master index for modules, data sources, automations, defects, and documentation."
+    },
+    "sda_layer_mapping": {
+      "status": "active",
+      "decision": "Map SDA layers onto existing files instead of moving execution files into new folders."
+    },
+    "deployment_gate": {
+      "status": "active",
+      "decision": "Commit, push, and deployment require explicit user request because GitHub push triggers Netlify deployment."
+    }
+  },
+  "modules": {
+    "browser_app": {
+      "path": "index.html",
+      "tier": "Tier 0",
+      "owner_area": "single-page UI, client state, Notion data orchestration",
+      "status": "active",
+      "depends_on": ["notion_proxy", "notion_databases", "google_calendar_api", "cloudinary_upload"],
+      "used_by": ["end_users"],
+      "tests": ["tools/check-js-syntax.mjs"],
+      "last_verified": "2026-05-07: inline script syntax PASS"
+    },
+    "notion_proxy": {
+      "path": "netlify/functions/proxy.js",
+      "tier": "Tier 0",
+      "owner_area": "CORS-safe Notion API forwarding",
+      "status": "active",
+      "depends_on": ["notion_api", "x_notion_token_header"],
+      "used_by": ["browser_app"],
+      "tests": ["tools/check-js-syntax.mjs"],
+      "last_verified": "2026-05-07: CommonJS syntax PASS"
+    },
+    "netlify_deployment_config": {
+      "path": "netlify.toml",
+      "tier": "Tier 1",
+      "owner_area": "Netlify function path and cache behavior",
+      "status": "active",
+      "depends_on": ["notion_proxy"],
+      "used_by": ["netlify_deploy"],
+      "tests": [],
+      "last_verified": null
+    },
+    "agent_instructions": {
+      "path": "AGENTS.md",
+      "tier": "Tier 1",
+      "owner_area": "Codex operating rules and architecture pointers",
+      "status": "active",
+      "depends_on": ["architecture_knowledge"],
+      "used_by": ["codex_sessions"],
+      "tests": [],
+      "last_verified": "2026-05-07"
+    },
+    "syntax_smoke_test": {
+      "path": "tools/check-js-syntax.mjs",
+      "tier": "Tier 1",
+      "owner_area": "minimal syntax regression gate for inline browser script and Netlify proxy",
+      "status": "active",
+      "depends_on": ["browser_app", "notion_proxy"],
+      "used_by": ["codex_sessions", "claude_code_sessions"],
+      "tests": [],
+      "last_verified": "2026-05-07: PASS"
+    },
+    "claude_compatibility": {
+      "path": "CLAUDE.md",
+      "tier": "Tier 2",
+      "owner_area": "Claude Code compatibility rules",
+      "status": "active",
+      "depends_on": [".claude/settings.json", ".claude/hooks"],
+      "used_by": ["claude_code_sessions"],
+      "tests": [],
+      "last_verified": null
+    },
+    "architecture_knowledge": {
+      "path": "knowledge/",
+      "tier": "Tier 1",
+      "owner_area": "IDA master index, architecture, workflow, defect, and glossary records",
+      "status": "active",
+      "depends_on": ["browser_app", "notion_proxy"],
+      "used_by": ["codex_sessions", "claude_code_sessions"],
+      "tests": [],
+      "last_verified": "2026-05-07"
+    }
+  },
+  "frontend_function_areas": {
+    "setup_and_auth": {
+      "path": "index.html",
+      "owner_area": "Notion token setup, localStorage state, Google Calendar auth",
+      "tier": "Tier 0"
+    },
+    "todo_calendar": {
+      "path": "index.html",
+      "owner_area": "calendar selection, week range, carried tasks, weekly completed tasks",
+      "tier": "Tier 0"
+    },
+    "fixed_schedule": {
+      "path": "index.html",
+      "owner_area": "weekly/monthly recurring schedule cards",
+      "tier": "Tier 1"
+    },
+    "performance_crm": {
+      "path": "index.html",
+      "owner_area": "CRM event cards, Notion callouts, Cloudinary images, Markdown export",
+      "tier": "Tier 1"
+    },
+    "design_requests": {
+      "path": "index.html",
+      "owner_area": "design request board and status updates",
+      "tier": "Tier 1"
+    },
+    "content_requests": {
+      "path": "index.html",
+      "owner_area": "content request board and status updates",
+      "tier": "Tier 1"
+    },
+    "rendering": {
+      "path": "index.html",
+      "owner_area": "single render loop and UI templates",
+      "tier": "Tier 0"
+    }
+  },
+  "automations": {
+    "claude_auto_stage": {
+      "status": "active-for-claude-only",
+      "trigger": "Claude Code PostToolUse Edit|Write hook",
+      "entrypoint": ".claude/hooks/auto-stage.mjs",
+      "outputs": ["git index"],
+      "failure_log": null
+    },
+    "claude_auto_commit": {
+      "status": "active-for-claude-only",
+      "trigger": "Claude Code Stop hook",
+      "entrypoint": ".claude/hooks/auto-commit.mjs",
+      "outputs": ["local git commit"],
+      "failure_log": null
+    },
+    "netlify_auto_deploy": {
+      "status": "active",
+      "trigger": "GitHub push",
+      "entrypoint": "Netlify linked site",
+      "outputs": ["https://nptodolist.netlify.app"],
+      "failure_log": "Netlify deploy logs"
+    }
+  },
+  "data_sources": {
+    "notion_weekly_tasks": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "database_id": "0de58e7636134d4382df512e18a3ab0f",
+      "freshness_rule": "Loaded per selected date/user and completed-month cache",
+      "fallback": "local cache in S.tasks during current browser session"
+    },
+    "notion_fixed_schedule": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "database_id": "014f0605d8fb490abfb58789e7a9c30b",
+      "freshness_rule": "Loaded per user",
+      "fallback": "empty schedule with toast on failure"
+    },
+    "notion_design_requests": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "database_id": "26560753b39880609313e71dd522ca3d",
+      "freshness_rule": "Loaded when Design team tab is selected",
+      "fallback": "empty request list with toast on failure"
+    },
+    "notion_content_requests": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "database_id": "33460753b39880daa344fbe9f6667250",
+      "freshness_rule": "Loaded when Content team tab is selected",
+      "fallback": "empty request list with toast on failure"
+    },
+    "notion_crm_events": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "database_id": "2b260753-b398-80b0-b7f4-faad72bab6c7",
+      "freshness_rule": "Loaded when Performance CRM calendar mode is selected",
+      "fallback": "empty CRM list with toast on failure"
+    },
+    "google_calendar_youtube": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "freshness_rule": "Loaded after Google auth token is available",
+      "fallback": "calendar badges omitted"
+    },
+    "cloudinary_unsigned_upload": {
+      "kind": "api",
+      "owner_module": "browser_app",
+      "freshness_rule": "Used on image upload",
+      "fallback": "upload failure toast"
+    }
+  },
+  "reports": {},
+  "defects": {
+    "W-20260507-001": {
+      "status": "DEFERRED",
+      "severity": "medium",
+      "source": "knowledge/workflow/weakness_log.md"
+    },
+    "W-20260507-002": {
+      "status": "LOGGED",
+      "severity": "medium",
+      "source": "knowledge/workflow/weakness_log.md"
+    },
+    "W-20260507-003": {
+      "status": "LOGGED",
+      "severity": "low",
+      "source": "knowledge/workflow/weakness_log.md"
+    }
+  },
+  "archive": {}
+}
