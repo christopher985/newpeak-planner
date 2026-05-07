@@ -28,3 +28,12 @@
 - 남은 위험: 브라우저 E2E와 Notion 실제 API 검증은 별도 수행 필요.
 - 관련 파일: `knowledge/`, `tools/check-js-syntax.mjs`, `AGENTS.md`
 - 다음 작업: 최소 검증 도구를 실행하고 결과를 최종 보고한다.
+
+## 2026-05-07 - Global DESIGN.md neutral UI pass
+
+- 목적: 프로젝트 전용 `design.md`가 없으므로 `C:\Users\USER\.codex\design\DESIGN.md` fallback 기준으로 Todo 웹보드 UI를 정돈한다.
+- 변경: 중립 배경, 흰 표면, `#2563EB` 상호작용 색, 8px radius, 절제된 border/shadow, focus-visible 상태, 캘린더 선택 상태를 적용했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, Edge headless 초기 설정 화면 시각 확인 PASS, fake 토큰 기반 보드 화면 시각 확인 PASS.
+- 남은 위험: 실제 Notion 토큰과 운영 데이터로 카드가 많은 상태의 스크롤/밀도 검증은 아직 수행하지 않았다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 사용자가 승인하면 커밋/푸시 전 운영 데이터로 주요 탭을 수동 확인한다.

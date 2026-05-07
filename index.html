@@ -8,44 +8,73 @@
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
+  :root{
+    --np-primary:#111827;
+    --np-secondary:#4B5563;
+    --np-accent:#2563EB;
+    --np-neutral:#F9FAFB;
+    --np-surface:#FFFFFF;
+    --np-border:#D1D5DB;
+    --np-muted:#6B7280;
+    --np-success:#047857;
+    --np-warning:#92400E;
+    --np-error:#DC2626;
+    --np-radius:8px;
+    --np-radius-sm:6px;
+    --np-shadow:0 1px 2px rgba(17,24,39,.05);
+  }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Pretendard Variable','Apple SD Gothic Neo',sans-serif;background:#f5f3ef;color:#1c1a17;min-height:100vh}
-  input,button,select{font-family:inherit}
-  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#d4d0ca;border-radius:2px}
+  body{font-family:Inter,'Pretendard Variable',ui-sans-serif,system-ui,'Apple SD Gothic Neo',sans-serif;background:var(--np-neutral);color:var(--np-primary);min-height:100vh;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  input,button,select,textarea{font-family:inherit;letter-spacing:0!important}
+  div,span,h1,h2,h3,p,a,label{letter-spacing:0!important}
+  ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:var(--np-border);border-radius:999px}
   @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
   @keyframes pulse{0%,100%{opacity:.4}50%{opacity:.7}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes clearPop{0%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(1deg) scale(1.1)}100%{transform:rotate(-2deg) scale(1)}}
   .clear-badge:hover{animation:clearPop .3s ease}
-  .row{animation:fadeIn .15s ease}
+  .row{animation:fadeIn .15s ease;border-radius:var(--np-radius)!important;box-shadow:var(--np-shadow)!important}
   .row[draggable=true]:active{cursor:grabbing}
-  .row.drag-over{border-top:2px solid #e05c1a!important}
-  .sk{animation:pulse 1.4s ease infinite;background:#e8e4de;border-radius:8px}
-  .sp{width:13px;height:13px;border:2px solid #d4d0ca;border-top-color:#e05c1a;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block}
-  button:not([disabled]):hover{opacity:.75}
-  a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
-  .cal-day-hdr{font-size:10px;font-weight:700;text-align:center;padding:4px 0;color:#9b9794}
-  .cal-day-hdr.sun{color:#ef4444}.cal-day-hdr.sat{color:#3b82f6}
-  .cal-cell{min-height:42px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;cursor:pointer;border-radius:6px;transition:all .12s;position:relative;padding:3px 0}
-  .cal-cell:hover{background:#f0eee9}
-  .cal-cell.other-month .cal-num{color:#d4d0ca}
-  .cal-cell.today .cal-num{background:#e05c1a;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
-  .cal-cell.selected{background:#1c1a1710}
-  .cal-cell.selected .cal-num{background:#1c1a17;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
-  .cal-cell.today.selected .cal-num{background:#e05c1a}
+  .row.drag-over{border-top:2px solid var(--np-accent)!important}
+  .sk{animation:pulse 1.4s ease infinite;background:#E5E7EB;border-radius:var(--np-radius)}
+  .sp{width:13px;height:13px;border:2px solid var(--np-border);border-top-color:var(--np-accent);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:inline-block}
+  button{min-height:28px}
+  button:not([disabled]):hover{opacity:1;filter:brightness(.97);transform:translateY(-1px)}
+  button,input,textarea,select{transition:border-color .15s,box-shadow .15s,background-color .15s,transform .15s,filter .15s}
+  button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid rgba(37,99,235,.22);outline-offset:2px;border-color:var(--np-accent)!important}
+  a{color:var(--np-accent);text-decoration:none}a:hover{text-decoration:underline}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+  .cal-day-hdr{font-size:10px;font-weight:700;text-align:center;padding:4px 0;color:var(--np-muted)}
+  .cal-day-hdr.sun{color:var(--np-error)}.cal-day-hdr.sat{color:var(--np-accent)}
+  .cal-cell{min-height:42px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;cursor:pointer;border-radius:var(--np-radius-sm);transition:all .12s;position:relative;padding:3px 0}
+  .cal-cell:hover{background:#F3F4F6}
+  .cal-cell.other-month .cal-num{color:#CBD5E1}
+  .cal-cell.today .cal-num{background:var(--np-primary)!important;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  .cal-cell.selected{background:rgba(37,99,235,.08)}
+  .cal-cell.selected .cal-num{background:var(--np-accent)!important;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  .cal-cell.today.selected .cal-num{background:var(--np-accent)!important}
   .cal-cell.sun .cal-num{color:#ef4444}.cal-cell.sat .cal-num{color:#3b82f6}
   .cal-cell.today .cal-num,.cal-cell.selected .cal-num{color:#fff!important}
   .cal-num{font-size:12px;font-weight:500;line-height:1}
   .cal-dots{display:flex;gap:2px;justify-content:center;min-height:5px}
   .cal-dot{width:4px;height:4px;border-radius:50%}
 
-  .team-sel{background:#2c2a27;border:1.5px solid #3a3835;border-radius:7px;padding:6px 28px 6px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b9794'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .team-sel{background:#1F2937;border:1.5px solid #374151;border-radius:var(--np-radius-sm);padding:6px 28px 6px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23D1D5DB'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
   .perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:flex-start}
   .default-layout{display:flex;gap:20px;align-items:flex-start}
   .default-sidebar{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
   .main-pad{padding:20px 24px 40px}
   .hpad{padding-left:24px;padding-right:24px}
+  [style*="background:#f5f3ef"],[style*="background:#f9f8f6"],[style*="background:#faf9f7"]{background:var(--np-neutral)!important}
+  [style*="background:#1c1a17"]{background:var(--np-primary)!important}
+  [style*="color:#1c1a17"]{color:var(--np-primary)!important}
+  [style*="color:#6b6762"],[style*="color:#9b9794"],[style*="color:#b0ada8"]{color:var(--np-muted)!important}
+  [style*="border:1px solid #e8e4de"],[style*="border:1.5px solid #e8e4de"],[style*="border:2px solid #d4d0ca"]{border-color:var(--np-border)!important}
+  [style*="border-bottom:1px solid #e8e4de"],[style*="border-top:1px solid #e8e4de"]{border-color:var(--np-border)!important}
+  [style*="border-radius:10px"],[style*="border-radius:12px"],[style*="border-radius:14px"]{border-radius:var(--np-radius)!important}
+  [style*="box-shadow:0 1px 3px"],[style*="box-shadow:0 2px 6px"]{box-shadow:var(--np-shadow)!important}
+  input[style],textarea[style],select[style]{background:var(--np-surface)!important;color:var(--np-primary)!important;border-color:var(--np-border)!important}
+  .main-pad>div{min-width:0}
   @media(max-width:768px){
     .perf-grid{grid-template-columns:1fr!important;gap:12px}
     .perf-col-mid{order:-1}
@@ -2282,7 +2311,7 @@ function rCalendar(){
     }
     const cellClick=isDesign?'':(isPerfCal&&S.calMode==='crm'?`openCrmModal('${ds}')`:`selectDate('${ds}')`);
     return`<div class="${cls}" onclick="${cellClick}" style="padding:4px 0;${bgStyle}">
-      <span style="${ns}">${d}</span>
+      <span class="cal-num" style="${ns}">${d}</span>
       ${dots?`<div class="cal-dots">${dots}</div>`:''}
       ${cellContent}
     </div>`;
@@ -2549,10 +2578,10 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
       <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:7px">
         <input id="ti" placeholder="업무 입력 후 Enter…" enterkeyhint="send"
-          style="flex:1;background:#f5f3ef;border:1.5px solid #e8e4de;border-radius:8px;
+          style="flex:1;background:#fff;border:1.5px solid #D1D5DB;border-radius:8px;
           padding:9px 12px;font-size:12px;color:#1c1a17;outline:none;transition:border-color .15s"
-          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
-        <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
+          onfocus="this.style.borderColor='#2563EB'" onblur="this.style.borderColor='#D1D5DB'"/>
+        <button type="submit" onclick="addTask();return false" style="background:#2563EB;border:none;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 1px 2px rgba(17,24,39,.05)">추가</button>
       </form>
     </div>
     <!-- 고정업무 -->
@@ -2644,10 +2673,10 @@ function rDefaultLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
       <form onsubmit="event.preventDefault();addTask()" style="display:flex;gap:8px">
         <input id="ti" placeholder="${fmtDate(S.selectedDate)} 업무 입력 후 Enter…" enterkeyhint="send"
-          style="flex:1;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;
+          style="flex:1;background:#fff;border:1.5px solid #D1D5DB;border-radius:8px;
           padding:10px 14px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)"
-          onfocus="this.style.borderColor='${ac}'" onblur="this.style.borderColor='#e8e4de'"/>
-        <button type="submit" onclick="addTask();return false" style="background:${ac};border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px ${ac}44">추가</button>
+          onfocus="this.style.borderColor='#2563EB'" onblur="this.style.borderColor='#D1D5DB'"/>
+        <button type="submit" onclick="addTask();return false" style="background:#2563EB;border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 1px 2px rgba(17,24,39,.05)">추가</button>
       </form>
       <div>
         ${S.tL&&!all.length?`<div class="sk" style="height:56px;margin-bottom:8px"></div><div class="sk" style="height:56px;margin-bottom:8px;opacity:.6"></div><div class="sk" style="height:56px;opacity:.35"></div>`:''}
@@ -3076,11 +3105,11 @@ function rContentDetailModal(){
 function renderSetup(){
   return`<div style="max-width:540px;margin:60px auto;padding:0 24px">
     <div style="margin-bottom:28px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#e05c1a;text-transform:uppercase;margin-bottom:8px">뉴픽 · WEEKLY TODO</div>
+      <div style="font-size:10px;font-weight:700;color:#2563EB;text-transform:uppercase;margin-bottom:8px">뉴픽 · WEEKLY TODO</div>
       <h1 style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px">초기 설정</h1>
       <p style="font-size:13px;color:#6b6762;line-height:1.7">Notion 통합 토큰을 입력해주세요.<br/>한 번만 설정하면 이 기기에서 계속 사용됩니다.</p>
     </div>
-    <div style="background:#fff;border:1px solid #e8e4de;border-radius:12px;padding:18px;margin-bottom:16px">
+    <div style="background:#fff;border:1px solid #D1D5DB;border-radius:8px;padding:18px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;color:#9b9794;margin-bottom:12px;letter-spacing:.5px">설정 방법</div>
       ${[
         ['1','<a href="https://www.notion.so/profile/integrations" target="_blank">notion.so/profile/integrations</a> 접속'],
@@ -3088,19 +3117,19 @@ function renderSetup(){
         ['3','Notion에서 <b>📋 주간 태스크</b> DB → ··· → 연결 추가 → 뉴픽 Todo'],
         ['4','<b>📌 고정 스케줄</b> DB도 동일하게 연결'],
       ].map(([n,t])=>`<div style="display:flex;gap:10px;margin-bottom:8px;align-items:flex-start">
-        <span style="min-width:18px;height:18px;background:#f5f3ef;border:1px solid #e8e4de;border-radius:50%;font-size:10px;font-weight:700;color:#9b9794;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n}</span>
+        <span style="min-width:18px;height:18px;background:#F9FAFB;border:1px solid #D1D5DB;border-radius:50%;font-size:10px;font-weight:700;color:#6B7280;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n}</span>
         <span style="font-size:12px;color:#1c1a17;line-height:1.6">${t}</span>
       </div>`).join('')}
     </div>
     <div style="margin-bottom:10px">
       <div style="font-size:11px;color:#6b6762;margin-bottom:5px;font-weight:600">통합 토큰</div>
       <input id="token-input" type="password" placeholder="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        style="width:100%;background:#fff;border:1.5px solid #e8e4de;border-radius:8px;padding:10px 13px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;font-family:monospace"
-        onfocus="this.style.borderColor='#e05c1a'" onblur="this.style.borderColor='#e8e4de'"
+        style="width:100%;background:#fff;border:1.5px solid #D1D5DB;border-radius:8px;padding:10px 13px;font-size:13px;color:#1c1a17;outline:none;transition:border-color .15s;font-family:monospace"
+        onfocus="this.style.borderColor='#2563EB'" onblur="this.style.borderColor='#D1D5DB'"
         onkeydown="if(event.key==='Enter')testToken()"/>
     </div>
     <button onclick="testToken()" ${S.testing?'disabled':''}
-      style="width:100%;background:${S.testing?'#f5d0b8':'#e05c1a'};border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;color:#fff;cursor:${S.testing?'not-allowed':'pointer'}">
+      style="width:100%;background:${S.testing?'#93C5FD':'#2563EB'};border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;color:#fff;cursor:${S.testing?'not-allowed':'pointer'}">
       ${S.testing?'<span style="display:flex;align-items:center;justify-content:center;gap:8px"><span class="sp"></span> 연결 확인 중…</span>':'연결 테스트 후 저장'}
     </button>
     ${S.toast?`<div style="margin-top:10px;padding:10px 13px;border-radius:8px;font-size:12px;font-weight:600;

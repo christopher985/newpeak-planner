@@ -43,7 +43,7 @@
       "depends_on": ["notion_proxy", "notion_databases", "google_calendar_api", "cloudinary_upload"],
       "used_by": ["end_users"],
       "tests": ["tools/check-js-syntax.mjs"],
-      "last_verified": "2026-05-07: inline script syntax PASS"
+      "last_verified": "2026-05-07: inline script syntax PASS; Edge headless visual smoke PASS with mocked token"
     },
     "notion_proxy": {
       "path": "netlify/functions/proxy.js",
