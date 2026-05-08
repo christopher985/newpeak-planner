@@ -37,3 +37,12 @@
 - 남은 위험: 실제 Notion 토큰과 운영 데이터로 카드가 많은 상태의 스크롤/밀도 검증은 아직 수행하지 않았다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 사용자가 승인하면 커밋/푸시 전 운영 데이터로 주요 탭을 수동 확인한다.
+
+## 2026-05-08 - Pending Todo preservation on auth/network failure
+
+- 목적: 웹보드를 오래 켜둔 뒤 인증/연결이 끊긴 상태에서 만든 Todo 카드가 새로고침 후 사라지지 않게 한다.
+- 변경: Google Calendar 토큰은 자동 로그인 팝업 대신 silent refresh를 주기적으로 시도하고, Todo 생성 실패 시 카드를 `localStorage` 대기열에 보존한 뒤 연결 복구 시 Notion에 자동 동기화하도록 했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, 실패 API mock에서 pending queue 저장 PASS, 성공 API mock에서 pending queue 비움 PASS.
+- 남은 위험: Google 계정 세션 자체가 만료된 경우 브라우저 정책상 완전한 무로그인 갱신은 불가능하다. 이 경우 Google Calendar 배지만 일시 중지되고 Todo 임시 저장은 유지된다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 실제 운영 토큰으로 장시간 방치 후 카드 생성/재연결 시나리오를 수동 확인한다.

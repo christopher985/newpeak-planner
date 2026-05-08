@@ -103,6 +103,7 @@ const CLOUDINARY_CLOUD = 'drwnutgxi';
 const CLOUDINARY_PRESET = 'crm_unsigned';
 const TOKEN_KEY = 'newpick-notion-token';
 const TEAM_KEY  = 'newpick-team';
+const PENDING_TASKS_KEY = 'newpick-pending-tasks-v1';
 const API_BASE  = '/.netlify/functions/proxy';
 
 const TEAMS = ['운영','퍼포먼스','콘텐츠','생산기획','디자인','정산'];
@@ -208,6 +209,8 @@ const GCAL_CHANNEL_MAP={
 
 let YT_EVENTS=[];
 let gcalToken=localStorage.getItem(GCAL_TOKEN_KEY)||'';
+let _gcalAuthErrorHandler=null;
+let _gcalRefreshTimer=null;
 
 function ytMatchBrand(title){
   for(const b of YT_BRAND_KW)if(title.includes(b.kw))return b;
@@ -227,6 +230,7 @@ function ytByDate(){
 
 let _gcalClient=null;
 function _getGcalClient(onError){
+  if(onError)_gcalAuthErrorHandler=onError;
   if(_gcalClient)return _gcalClient;
   if(typeof google==='undefined')return null;
   _gcalClient=google.accounts.oauth2.initTokenClient({
@@ -236,13 +240,18 @@ function _getGcalClient(onError){
     callback:(resp)=>{
       if(resp.error){
         console.warn('gcal auth:',resp.error);
-        if(onError)onError(resp.error);
+        gcalToken='';
+        localStorage.removeItem(GCAL_TOKEN_KEY);
+        localStorage.removeItem(GCAL_TOKEN_EXP_KEY);
+        if(_gcalRefreshTimer)clearTimeout(_gcalRefreshTimer);
+        if(_gcalAuthErrorHandler)_gcalAuthErrorHandler(resp.error);
         return;
       }
       gcalToken=resp.access_token;
       localStorage.setItem(GCAL_TOKEN_KEY,gcalToken);
       const expMs=Date.now()+(resp.expires_in||3600)*1000-60000;
       localStorage.setItem(GCAL_TOKEN_EXP_KEY,String(expMs));
+      scheduleGcalRefresh();
       render();loadYtEvents();
     }
   });
@@ -262,11 +271,18 @@ function gcalAuth(silent){
     c.requestAccessToken({prompt:''});
   }
 }
+function scheduleGcalRefresh(){
+  if(_gcalRefreshTimer)clearTimeout(_gcalRefreshTimer);
+  const exp=Number(localStorage.getItem(GCAL_TOKEN_EXP_KEY)||0);
+  if(!exp)return;
+  const delay=Math.max(60000,exp-Date.now()-5*60000);
+  _gcalRefreshTimer=setTimeout(()=>gcalAuth(true),delay);
+}
 function gcalEnsureToken(){
-  if(gcalTokenValid()){loadYtEvents();return;}
+  if(gcalTokenValid()){scheduleGcalRefresh();loadYtEvents();return;}
   const c=_getGcalClient(function(err){
     if(err==='popup_blocked_by_browser'||err==='access_denied')return;
-    gcalAuth(false);
+    YT_EVENTS=[];render();
   });
   if(!c){setTimeout(gcalEnsureToken,500);return;}
   c.requestAccessToken({prompt:'none'});
@@ -1113,6 +1129,85 @@ async function notion(method,path,body){
   if(!r.ok)throw new Error(data.message||`HTTP ${r.status}`);
   return data;
 }
+function pendingTasks(){
+  try{return JSON.parse(localStorage.getItem(PENDING_TASKS_KEY)||'[]')||[];}
+  catch(e){return[];}
+}
+function savePendingTasks(items){
+  localStorage.setItem(PENDING_TASKS_KEY,JSON.stringify(items));
+}
+function pendingKey(date,user){return`${date}-${user}`;}
+function pendingToTask(p){
+  return{
+    id:p.id,text:p.text,completed:false,type:null,urgency:null,priority:null,
+    carried:false,dateStr:p.date,brand:p.brand||null,area:p.area||null,memo:'',
+    color:p.color||null,_pending:true,_pendingError:p.error||null
+  };
+}
+function mergePendingIntoDate(ds,user){
+  const k=pendingKey(ds,user);
+  const arr=S.tasks[k]=S.tasks[k]||[];
+  pendingTasks().filter(p=>p.date===ds&&p.user===user).forEach(p=>{
+    if(!arr.some(t=>t.id===p.id))arr.push(pendingToTask(p));
+  });
+}
+function queuePendingTask(p){
+  const list=pendingTasks().filter(x=>x.id!==p.id);
+  list.push({...p,queuedAt:p.queuedAt||new Date().toISOString()});
+  savePendingTasks(list);
+  mergePendingIntoDate(p.date,p.user);
+}
+function removePendingTask(id){
+  savePendingTasks(pendingTasks().filter(p=>p.id!==id));
+}
+function buildTaskPropsFromDraft(p){
+  const props={
+    '업무명':{title:[{text:{content:p.text}}]},
+    '담당자':{select:{name:p.user}},
+    '완료':{checkbox:false},
+    '날짜':{date:{start:p.date}},
+  };
+  if(p.weekday)props['요일']={select:{name:p.weekday}};
+  if(p.team==='퍼포먼스'&&p.brand)props['브랜드']={select:{name:p.brand}};
+  if(p.team==='퍼포먼스'&&p.area)props['영역']={select:{name:p.area}};
+  if(p.team==='퍼포먼스'&&p.color)props['색상']={select:{name:p.color}};
+  return props;
+}
+let _pendingSyncing=false;
+async function syncPendingTasks(opts={}){
+  if(_pendingSyncing||!S.token)return;
+  const list=pendingTasks();
+  if(!list.length)return;
+  _pendingSyncing=true;
+  let saved=0,blocked=false;
+  try{
+    for(const p of list){
+      try{
+        const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:buildTaskPropsFromDraft(p)});
+        removePendingTask(p.id);
+        const k=pendingKey(p.date,p.user);
+        const arr=S.tasks[k]||[];
+        const i=arr.findIndex(t=>t.id===p.id);
+        const savedTask={id:res.id,text:p.text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:p.date,brand:p.brand||null,area:p.area||null,memo:'',color:p.color||null};
+        if(i>=0)arr[i]=savedTask;
+        saved++;
+      }catch(e){
+        blocked=true;
+        const now=pendingTasks().map(x=>x.id===p.id?{...x,error:e.message,lastTriedAt:new Date().toISOString()}:x);
+        savePendingTasks(now);
+        const k=pendingKey(p.date,p.user);
+        const t=(S.tasks[k]||[]).find(x=>x.id===p.id);
+        if(t)t._pendingError=e.message;
+        break;
+      }
+    }
+  }finally{
+    _pendingSyncing=false;
+  }
+  if(saved)toast(`임시 저장 카드 ${saved}건 동기화 완료`);
+  else if(blocked&&!opts.quiet)toast('연결이 복구되면 임시 저장 카드를 다시 저장합니다',true);
+  render();
+}
 
 /* ══════════════════════════════════════
    데이터 로드
@@ -1139,7 +1234,8 @@ async function loadTasksByDate(ds,user){
     } else {
       S.tasks[k]=res.results.map(mapTask);
     }
-  }catch(e){S.tasks[k]=[];toast('태스크 로드 실패: '+e.message,true);}
+    mergePendingIntoDate(ds,user);
+  }catch(e){S.tasks[k]=[];mergePendingIntoDate(ds,user);toast('태스크 로드 실패: '+e.message,true);}
   S.tL=false;render();
 }
 async function loadCarried(user){
@@ -1566,24 +1662,21 @@ async function loadBlockChildren(parentId,blocks){
 async function doAdd(text){
   const k=`${S.selectedDate}-${S.user}`,tid=`t${Date.now()}`;
   const weekday=dateToKrWeekday(S.selectedDate);
-  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',color:S.team==='퍼포먼스'?S.addColor:null,_p:true};
+  const draft={id:tid,text,date:S.selectedDate,user:S.user,team:S.team,weekday,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,color:S.team==='퍼포먼스'?S.addColor:null};
+  const tmp={id:tid,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:draft.brand,area:draft.area,memo:'',color:draft.color,_p:true};
   (S.tasks[k]=S.tasks[k]||[]).push(tmp);render();
   try{
-    const props={
-      '업무명':{title:[{text:{content:text}}]},
-      '담당자':{select:{name:S.user}},
-      '완료':{checkbox:false},
-      '날짜':{date:{start:S.selectedDate}},
-    };
-    if(weekday) props['요일']={select:{name:weekday}};
-    if(S.team==='퍼포먼스'&&S.addBrand) props['브랜드']={select:{name:S.addBrand}};
-    if(S.team==='퍼포먼스'&&S.addArea) props['영역']={select:{name:S.addArea}};
-    if(S.team==='퍼포먼스'&&S.addColor) props['색상']={select:{name:S.addColor}};
+    const props=buildTaskPropsFromDraft(draft);
     const res=await notion('POST','/pages',{parent:{database_id:TASKS_DB},properties:props});
     const i=S.tasks[k].findIndex(t=>t.id===tid);
-    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:S.team==='퍼포먼스'?S.addBrand:null,area:S.team==='퍼포먼스'?S.addArea:null,memo:'',color:S.team==='퍼포먼스'?S.addColor:null};
+    if(i>=0)S.tasks[k][i]={id:res.id,text,completed:false,type:null,urgency:null,priority:null,carried:false,dateStr:S.selectedDate,brand:draft.brand,area:draft.area,memo:'',color:draft.color};
     toast('✓ 추가됨');
-  }catch(e){S.tasks[k]=S.tasks[k].filter(t=>t.id!==tid);toast('추가 실패: '+e.message,true);}
+  }catch(e){
+    queuePendingTask({...draft,error:e.message});
+    const i=S.tasks[k].findIndex(t=>t.id===tid);
+    if(i>=0)S.tasks[k][i]=pendingToTask({...draft,error:e.message});
+    toast('연결 문제로 카드가 임시 저장됨 — 재연결 시 자동 저장됩니다',true);
+  }
   render();
 }
 const _toggleLocks=new Set();
@@ -1637,13 +1730,19 @@ async function doDel(id){
   const prev=[...(S.tasks[k]||[])];
   S.tasks[k]=(S.tasks[k]||[]).filter(t=>t.id!==id);
   if(S.dropZone[k])S.dropZone[k]=S.dropZone[k].filter(x=>x!==id);
+  if(found?._pending){
+    removePendingTask(id);
+    toast('임시 저장 카드 삭제됨');
+    render();
+    return;
+  }
   render();
   try{await notion('PATCH',`/pages/${id}`,{archived:true});toast('삭제됨');}
   catch(e){S.tasks[k]=prev;toast('삭제 실패',true);render();}
 }
 function openMemo(id){
   const{t}=findTask(id);
-  if(!t||t._p)return;
+  if(!t||t._p||t._pending)return;
   S.memoModal={id,text:t.text,memo:t.memo||'',brand:t.brand||'',area:t.area||'',color:t.color||'',completed:t.completed,dateStr:t.dateStr||null,createdAt:t.createdAt||null,editedAt:t.editedAt||null,completedAt:t.completedAt||null,origCompletedAt:t.completedAt||null,editingCompletedAt:false,dirty:false,_images:[],_imagesLoading:true};
   render();
   loadMemoImages(id);
@@ -2401,6 +2500,7 @@ function tRow(t,ac,dim){
   // 좌측 상단: 이월 + 우선순위 + 긴급 (미완료) / 생성일 (완료)
   const fmtCreated=iso=>{const d=new Date(new Date(iso).getTime()+9*36e5);return`${d.getUTCMonth()+1}/${d.getUTCDate()}`;};
   const topLeft=!dim?[
+    t._pending?`<span style="font-size:9px;background:#fffbeb;color:#92400e;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:800">저장 대기</span>`:'',
     t.carried&&t.dateStr?`<span style="font-size:9px;color:#b91c1c;font-weight:700">${t.dateStr.slice(5).replace('-','/')}</span>`:'',
     t.priority?`<span style="font-size:9px;font-weight:800;color:${ac};width:14px;text-align:center">${t.priority}</span>`:'',
     us?`<span style="font-size:9px;background:${us.bg};color:${us.t};border-radius:4px;padding:1px 5px;font-weight:700;border:1px solid ${us.t}22">${t.urgency}</span>`:'',
@@ -2408,19 +2508,19 @@ function tRow(t,ac,dim){
 
   const dzone=t._dzone||'inc';
   const cc=!dim&&t.color?CARD_COLOR_MAP[t.color]:null;
-  const cardBg=dim?'#faf9f7':cc?cc.bg:'#fff';
-  const cardBorder=dim?'#e8e4de':cc?cc.border:t.priority===1?ac+'55':'#e8e4de';
+  const cardBg=t._pending?'#fffbeb':dim?'#faf9f7':cc?cc.bg:'#fff';
+  const cardBorder=t._pending?'#fcd34d':dim?'#e8e4de':cc?cc.border:t.priority===1?ac+'55':'#e8e4de';
   const dragAttr=isPerfTeam&&!dim&&!t._p?`draggable="true" ondragstart="dStart(event,'${t.id}')" ondragend="dEnd(event)" ondragover="dOver(event)" ondrop="dDropCard(event,'${t.id}','${dzone}')" ontouchstart="tStart(event,'${t.id}')" ontouchend="tEnd(event,'${t.id}','${dzone}')"`:''
   return`<div class="row" ${dragAttr} data-tid="${t.id}" data-tz="${dzone}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;
     padding:10px 12px;display:flex;align-items:flex-start;gap:10px;opacity:${dim?.55:1};margin-bottom:7px;
     box-shadow:${dim?'none':'0 1px 3px rgba(0,0,0,0.04)'}${isPerfTeam&&!dim?';cursor:grab':''}">
     ${t.completed
-      ?`<button class="clear-badge" onclick="toggle('${t.id}')" ${t._p?'disabled':''}
+      ?`<button class="clear-badge" onclick="toggle('${t.id}')" ${t._p||t._pending?'disabled':''}
         style="background:linear-gradient(135deg,${ac},${ac}cc);border:none;border-radius:6px;padding:3px 8px;flex-shrink:0;
         cursor:pointer;box-shadow:0 2px 6px ${ac}44;transform:rotate(-2deg);transition:all .15s;line-height:1">
         <span style="font-size:10px;font-weight:900;color:#fff;letter-spacing:1px;font-style:italic;text-shadow:0 1px 2px rgba(0,0,0,0.2)">CLEAR!</span>
       </button>`
-      :`<button onclick="toggle('${t.id}')" ${t._p?'disabled':''}
+      :`<button onclick="toggle('${t.id}')" ${t._p||t._pending?'disabled':''}
         style="width:20px;height:20px;border-radius:5px;flex-shrink:0;margin-top:2px;
         border:2px solid #d4d0ca;background:transparent;
         cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s">
@@ -3147,6 +3247,7 @@ async function testToken(){
     const data=await r.json();
     if(!r.ok)throw new Error(data.message||`${r.status}`);
     S.token=token;localStorage.setItem(TOKEN_KEY,token);S.testing=false;render();
+    syncPendingTasks();
     loadTasksByDate(S.selectedDate,S.user);
     setTimeout(()=>loadSched(S.user),400);
   }catch(e){S.testing=false;toast('연결 실패: '+e.message,true);render();}
@@ -3306,12 +3407,14 @@ function resetToken(){
 render();
 // CRM 모달 열린 동안 Ctrl+V 이미지 클립보드 붙여넣기 → Cloudinary 업로드
 document.addEventListener('paste',handleCrmImagePaste);
+window.addEventListener('online',()=>syncPendingTasks());
 // Google Calendar 자동 연동 (GIS 로딩 대기 후)
 setTimeout(()=>gcalEnsureToken(),800);
 if(S.token){
   if(S.team==='디자인'){loadDesignReqs();}
   else if(S.team==='콘텐츠'){loadContentReqs();}
   else{loadTasksByDate(S.selectedDate,S.user);setTimeout(()=>loadSched(S.user),400);if(S.team==='퍼포먼스')loadCarried(S.user);loadMonthlyDone(S.user);}
+  setTimeout(()=>syncPendingTasks({quiet:true}),1200);
 }
 </script>
 </body>
