@@ -2227,6 +2227,30 @@ function dEnd(e){e.target.style.opacity='1';_dragId=null;document.querySelectorA
 function dOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';
   const row=e.target.closest('.row');document.querySelectorAll('.row.drag-over').forEach(r=>r.classList.remove('drag-over'));
   if(row)row.classList.add('drag-over');}
+function rowByTaskId(id){
+  return [...document.querySelectorAll('.row[data-tid]')].find(r=>r.getAttribute('data-tid')===id);
+}
+function dropAfterTarget(e,targetId){
+  const row=e?.target?.closest?.('.row')||rowByTaskId(targetId);
+  if(!row||typeof e?.clientY!=='number')return false;
+  const rect=row.getBoundingClientRect();
+  return e.clientY>rect.top+rect.height/2;
+}
+function currentIncIds(k){
+  const dz=S.dropZone[k]||[];
+  const base=(S.tasks[k]||[]).filter(t=>!t.completed&&!dz.includes(t.id));
+  return sortInc(base).map(t=>t.id);
+}
+function setManualOrder(k,order){
+  const visible=currentIncIds(k);
+  const visibleSet=new Set(visible);
+  const seen=new Set();
+  S.manualOrder[k]=[...order,...visible].filter(id=>{
+    if(!visibleSet.has(id)||seen.has(id))return false;
+    seen.add(id);return true;
+  });
+  S.incSort='manual';
+}
 function dDropCard(e,targetId,zone){
   e.preventDefault();e.stopPropagation();
   if(!_dragId||_dragId===targetId)return;
@@ -2242,13 +2266,16 @@ function dDropCard(e,targetId,zone){
     if(ti>=0)arr.splice(ti,0,_dragId);else arr.push(_dragId);
   } else {
     // inc 존: manual order 업데이트
-    const inc=(S.tasks[k]||[]).filter(t=>!t.completed&&!(S.dropZone[k]||[]).includes(t.id));
-    const order=inc.map(t=>t.id);
+    const order=currentIncIds(k);
     if(!order.includes(_dragId))order.push(_dragId);
     const fi=order.indexOf(_dragId),ti=order.indexOf(targetId);
-    if(fi>=0&&ti>=0){order.splice(fi,1);order.splice(ti,0,_dragId);}
-    S.manualOrder[k]=order;
-    S.incSort='manual';
+    if(fi>=0&&ti>=0){
+      const after=dropAfterTarget(e,targetId);
+      order.splice(fi,1);
+      const insertAt=order.indexOf(targetId)+(after?1:0);
+      order.splice(insertAt,0,_dragId);
+    }
+    setManualOrder(k,order);
   }
   _dragId=null;render();
 }
@@ -2259,7 +2286,12 @@ function dDropZone(e,zone){
   const dz=S.dropZone[k]||(S.dropZone[k]=[]);
   const wasInDrop=dz.includes(_dragId);
   if(zone==='drop'&&!wasInDrop){dz.push(_dragId);}
-  else if(zone==='inc'&&wasInDrop){S.dropZone[k]=dz.filter(x=>x!==_dragId);}
+  else if(zone==='inc'&&wasInDrop){
+    S.dropZone[k]=dz.filter(x=>x!==_dragId);
+    const order=currentIncIds(k).filter(id=>id!==_dragId);
+    order.push(_dragId);
+    setManualOrder(k,order);
+  }
   _dragId=null;render();
 }
 /* 터치 드래그 (모바일) */
@@ -2311,7 +2343,7 @@ function tEnd(e,cardId,zone){
     if(dropRow){
       const tid=dropRow.getAttribute('data-tid');
       const tz=dropRow.getAttribute('data-tz')||'inc';
-      if(tid&&tid!==_tId){_dragId=_tId;dDropCard({preventDefault(){},stopPropagation(){}},tid,tz);}
+      if(tid&&tid!==_tId){_dragId=_tId;dDropCard({preventDefault(){},stopPropagation(){},clientY:touch.clientY},tid,tz);}
     } else if(dropZoneEl){
       const zn=dropZoneEl.getAttribute('data-dropzone');
       if(zn){_dragId=_tId;dDropZone({preventDefault(){}},zn);}
