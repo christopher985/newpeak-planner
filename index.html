@@ -2236,10 +2236,20 @@ function dropAfterTarget(e,targetId){
   const rect=row.getBoundingClientRect();
   return e.clientY>rect.top+rect.height/2;
 }
+function currentIncompleteTasks(k){
+  const dayTasks=S.tasks[k]||[];
+  const base=dayTasks.filter(t=>!t.completed);
+  if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
+    const carried=S.tasks['carried-'+S.user]||[];
+    const dayIds=new Set(dayTasks.map(t=>t.id));
+    const carryItems=carried.filter(t=>!t.completed&&!dayIds.has(t.id));
+    return carryItems.length?[...carryItems,...base]:base;
+  }
+  return base;
+}
 function currentIncIds(k){
   const dz=S.dropZone[k]||[];
-  const base=(S.tasks[k]||[]).filter(t=>!t.completed&&!dz.includes(t.id));
-  return sortInc(base).map(t=>t.id);
+  return sortInc(currentIncompleteTasks(k).filter(t=>!dz.includes(t.id))).map(t=>t.id);
 }
 function setManualOrder(k,order){
   const visible=currentIncIds(k);
@@ -3303,7 +3313,7 @@ function render(){
     if(s.recType==='매월')return s.monthDay===selDay;
     return curWeekday?s.weekday===curWeekday:false;
   });
-  let inc=tasks.filter(t=>!t.completed);
+  let inc=currentIncompleteTasks(`${S.selectedDate}-${S.user}`);
   const {s:_wkS,e:_wkE}=weekRange(S.selectedDate);
   const _wkSY=parseInt(_wkS.split('-')[0],10),_wkSM=parseInt(_wkS.split('-')[1],10)-1;
   const _wkEY=parseInt(_wkE.split('-')[0],10),_wkEM=parseInt(_wkE.split('-')[1],10)-1;
@@ -3327,13 +3337,6 @@ function render(){
     seen.add(x.id);
     return true;
   }).sort((a,b)=>{const ax=a.completedAt||a.editedAt||a.dateStr||'';const bx=b.completedAt||b.editedAt||b.dateStr||'';return bx.localeCompare(ax);});
-  // 오늘 이후 날짜: 과거 미완료 이월
-  if(S.selectedDate>=todayStr()&&S.team==='퍼포먼스'){
-    const carried=S.tasks['carried-'+S.user]||[];
-    const todayIds=new Set(tasks.map(t=>t.id));
-    const carryItems=carried.filter(t=>!todayIds.has(t.id));
-    if(carryItems.length)inc=[...carryItems,...inc];
-  }
   const uc=UC[S.user]||TEAM_COLOR[S.team]||'#e05c1a';
   const ac=TEAM_COLOR[S.team]||'#e05c1a';
   const isPerfTeam=S.team==='퍼포먼스';
