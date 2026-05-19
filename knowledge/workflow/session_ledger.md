@@ -73,3 +73,12 @@
 - 남은 위험: 실제 2026-06-28 운영 Google Calendar 이벤트 응답 원문은 OAuth 토큰을 노출하지 않고는 직접 확인하지 않았다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 배포 후 2026-06-28 올라잇클래스 프로모션 배지가 자사몰 색으로 표시되는지 운영 화면에서 확인한다.
+
+## 2026-05-19 - Promotion channel hue fallback correction
+
+- 목적: 프로모션 캘린더 색상이 여전히 회색으로 표시되는 원인을 좁히고 색상 판정을 보강한다.
+- 변경: fallback 배경색을 정확한 hex 문자열로만 비교하지 않고, 토마토/연분홍/귤/바나나/세이지/바질 계열 hue 범위로 채널을 판정하도록 했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, 토마토 계열 변형(`#d50000`, `#dc2127`, `#ea4335`) 자사몰 판정 smoke PASS.
+- 남은 위험: 실제 2026-06-28 운영 Google Calendar 이벤트 응답 원문은 OAuth 토큰을 노출하지 않고는 직접 확인하지 않았다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 배포 후 2026-06-28 올라잇클래스 프로모션 배지가 회색이 아닌 자사몰 색으로 표시되는지 확인한다.
