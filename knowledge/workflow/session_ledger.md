@@ -82,3 +82,12 @@
 - 남은 위험: 실제 2026-06-28 운영 Google Calendar 이벤트 응답 원문은 OAuth 토큰을 노출하지 않고는 직접 확인하지 않았다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 배포 후 2026-06-28 올라잇클래스 프로모션 배지가 회색이 아닌 자사몰 색으로 표시되는지 확인한다.
+
+## 2026-05-19 - Codex local auto-commit policy
+
+- 목적: 사용자가 수정사항을 요청하고 Codex가 파일 변경을 반영한 경우 로컬 커밋까지 자동 생성하도록 프로젝트 운영 규칙을 바꾼다.
+- 변경: `AGENTS.md`의 Git 및 배포 정책을 수정해 자동 커밋 조건, 예외, stage 범위, push 금지 원칙을 명시했다.
+- 검증: `knowledge/index.json` JSON 파싱 PASS, Git diff 검사 PASS.
+- 남은 위험: Codex 앱 자체 훅이 아니라 프로젝트 지침 기반 운영 규칙이므로, 향후 세션의 에이전트가 이 지침을 읽고 준수해야 한다.
+- 관련 파일: `AGENTS.md`, `knowledge/index.json`
+- 다음 작업: 이후 파일 변경 작업부터 자동 로컬 커밋 여부를 최종 보고에 포함한다.

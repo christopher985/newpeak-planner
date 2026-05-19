@@ -73,7 +73,7 @@
       "depends_on": ["architecture_knowledge"],
       "used_by": ["codex_sessions"],
       "tests": [],
-      "last_verified": "2026-05-07"
+      "last_verified": "2026-05-19: Codex auto-commit local-only policy documented"
     },
     "syntax_smoke_test": {
       "path": "tools/check-js-syntax.mjs",
