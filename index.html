@@ -198,17 +198,38 @@ const YT_BRAND_KW=[
   {kw:'데미소다',label:'데미소다',color:'#ec4899'},
   {kw:'데자와',label:'데자와',color:'#f97316'},
 ];
-// Google Calendar colorId → 판매채널
+// Google Calendar 이벤트 색상 → 판매채널
+const PROMO_CHANNELS={
+  mall:{label:'자사몰',color:'#b91c1c',icon:'🏠'},
+  coupang:{label:'쿠팡',color:'#f59e0b',icon:'🟡'},
+  smart:{label:'스마트스토어',color:'#10b981',icon:'🟢'},
+};
 const GCAL_CHANNEL_MAP={
-  '11':{label:'자사몰',color:'#b91c1c',icon:'🏠'},   // Tomato → 진한 빨강
-  '4':{label:'자사몰',color:'#b91c1c',icon:'🏠'},    // Flamingo → 연분홍
-  '6':{label:'쿠팡',color:'#f59e0b',icon:'🟡'},      // Tangerine
-  '5':{label:'쿠팡',color:'#f59e0b',icon:'🟡'},      // Banana
-  '2':{label:'스마트스토어',color:'#10b981',icon:'🟢'}, // Sage
-  '10':{label:'스마트스토어',color:'#10b981',icon:'🟢'}, // Basil
+  '11':PROMO_CHANNELS.mall,    // Tomato
+  '4':PROMO_CHANNELS.mall,     // Flamingo
+  '6':PROMO_CHANNELS.coupang,  // Tangerine
+  '5':PROMO_CHANNELS.coupang,  // Banana
+  '2':PROMO_CHANNELS.smart,    // Sage
+  '10':PROMO_CHANNELS.smart,   // Basil
+};
+const GCAL_FALLBACK_BG_CHANNEL_MAP={
+  '#d50000':PROMO_CHANNELS.mall,
+  '#dc2127':PROMO_CHANNELS.mall,
+  '#e67c73':PROMO_CHANNELS.mall,
+  '#ff887c':PROMO_CHANNELS.mall,
+  '#f4511e':PROMO_CHANNELS.coupang,
+  '#ffb878':PROMO_CHANNELS.coupang,
+  '#f6bf26':PROMO_CHANNELS.coupang,
+  '#fbd75b':PROMO_CHANNELS.coupang,
+  '#33b679':PROMO_CHANNELS.smart,
+  '#7ae7bf':PROMO_CHANNELS.smart,
+  '#0b8043':PROMO_CHANNELS.smart,
+  '#51b749':PROMO_CHANNELS.smart,
 };
 
 let YT_EVENTS=[];
+let YT_CAL_FALLBACK_COLOR={backgroundColor:''};
+let _ytCalFallbackLoaded=false;
 let gcalToken=localStorage.getItem(GCAL_TOKEN_KEY)||'';
 let _gcalAuthErrorHandler=null;
 let _gcalRefreshTimer=null;
@@ -223,10 +244,23 @@ function ytByDate(){
     const b=ytMatchBrand(ev.summary);
     if(!b)return;
     const ds=ev.start;
-    const ch=ev.colorId?GCAL_CHANNEL_MAP[ev.colorId]:null;
+    const ch=GCAL_CHANNEL_MAP[String(ev.colorId||'')]||GCAL_FALLBACK_BG_CHANNEL_MAP[(ev.calendarBg||'').toLowerCase()]||null;
     (map[ds]=map[ds]||[]).push({label:b.label,color:b.color,title:ev.summary,channel:ch});
   });
   return map;
+}
+
+async function loadYtCalendarFallbackColor(){
+  if(_ytCalFallbackLoaded||!gcalToken)return;
+  _ytCalFallbackLoaded=true;
+  try{
+    const url=`https://www.googleapis.com/calendar/v3/users/me/calendarList/${encodeURIComponent(YT_CAL_ID)}`;
+    const res=await fetch(url,{headers:{Authorization:'Bearer '+gcalToken}});
+    if(res.status===401){_ytCalFallbackLoaded=false;return;}
+    if(!res.ok)return;
+    const data=await res.json();
+    YT_CAL_FALLBACK_COLOR={backgroundColor:(data.backgroundColor||'').toLowerCase()};
+  }catch{}
 }
 
 let _gcalClient=null;
@@ -292,10 +326,12 @@ function gcalDisconnect(){
   const oldToken=gcalToken;
   gcalToken='';localStorage.removeItem(GCAL_TOKEN_KEY);localStorage.removeItem(GCAL_TOKEN_EXP_KEY);
   if(typeof google!=='undefined'&&oldToken)google.accounts.oauth2.revoke(oldToken,()=>{});
+  YT_CAL_FALLBACK_COLOR={backgroundColor:''};_ytCalFallbackLoaded=false;
   YT_EVENTS=[];render();toast('Google Calendar 연동 해제');
 }
 async function loadYtEvents(){
   if(!gcalToken){gcalEnsureToken();return;}
+  await loadYtCalendarFallbackColor();
   const y=S.calYear,m=S.calMonth;
   const tMin=`${y}-${String(m+1).padStart(2,'0')}-01T00:00:00+09:00`;
   const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();
@@ -313,6 +349,7 @@ async function loadYtEvents(){
       start:ev.start?.date||ev.start?.dateTime?.split('T')[0]||'',
       summary:ev.summary||'',
       colorId:ev.colorId||null,
+      calendarBg:ev.colorId?'':YT_CAL_FALLBACK_COLOR.backgroundColor,
     }));
     render();
   }catch(e){toast('캘린더 로딩 실패: '+e.message,true);}

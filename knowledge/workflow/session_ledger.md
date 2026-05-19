@@ -64,3 +64,12 @@
 - 남은 위험: 실제 운영 Notion 데이터로 장시간 사용 중인 브라우저 상태까지는 확인하지 않았다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 운영 화면에서 이월 카드와 당일 카드를 섞어 위/중간/아래 이동을 확인한다.
+
+## 2026-05-19 - Promotion channel color fallback fix
+
+- 목적: Google Calendar에서 토마토로 보이는 프로모션 이벤트가 Todo 웹보드에서 회색으로 표시되는 문제를 수정한다.
+- 변경: 이벤트 개별 `colorId`가 없을 때 Google CalendarList의 기본 배경색을 fallback으로 사용해 자사몰/쿠팡/스마트스토어 채널을 판정하도록 했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, 토마토 `colorId`와 토마토 캘린더 배경색 fallback smoke PASS.
+- 남은 위험: 실제 2026-06-28 운영 Google Calendar 이벤트 응답 원문은 OAuth 토큰을 노출하지 않고는 직접 확인하지 않았다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 배포 후 2026-06-28 올라잇클래스 프로모션 배지가 자사몰 색으로 표시되는지 운영 화면에서 확인한다.
