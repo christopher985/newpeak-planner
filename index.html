@@ -2316,8 +2316,7 @@ function currentIncompleteTasks(k){
   return base;
 }
 function currentIncIds(k){
-  const dz=S.dropZone[k]||[];
-  return sortInc(currentIncompleteTasks(k).filter(t=>!dz.includes(t.id))).map(t=>t.id);
+  return sortInc(currentIncompleteTasks(k)).map(t=>t.id);
 }
 function setManualOrder(k,order){
   const visible=currentIncIds(k);
@@ -2805,42 +2804,24 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
     </div>
   </div>`;
 
-  const k=`${S.selectedDate}-${S.user}`;
-  const dzIds=S.dropZone[k]||[];
-  const incNorm=inc.filter(t=>!dzIds.includes(t.id));
-  const dropItems=dzIds.map(id=>inc.find(t=>t.id===id)).filter(Boolean);
-  dropItems.forEach(t=>t._dzone='drop');
-  const sortedInc=sortInc(incNorm);
+  const sortedInc=sortInc(inc);
   const sortBtns=[{k:'time',l:'시간순'},{k:'brand',l:'브랜드'},{k:'area',l:'영역'},{k:'manual',l:'수동'}];
   return`<div class="perf-grid">
-    <!-- 좌: 미완료 + Drop -->
+    <!-- 좌: 미완료 -->
     <div class="perf-col-inc">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:3px;height:14px;border-radius:2px;background:${ac};display:inline-block"></span>
           <span style="font-size:12px;font-weight:800;color:#1c1a17">미완료</span>
-          ${incNorm.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:8px;padding:2px 7px;font-weight:700">${incNorm.length}</span>`:''}
+          ${inc.length?`<span style="font-size:10px;background:${ac}18;color:${ac};border-radius:8px;padding:2px 7px;font-weight:700">${inc.length}</span>`:''}
         </div>
-        ${incNorm.length>1?`<div style="display:flex;gap:2px">
+        ${inc.length>1?`<div style="display:flex;gap:2px">
           ${sortBtns.map(b=>`<button onclick="setIncSort('${b.k}')" style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;
             background:${S.incSort===b.k?ac:'#f5f3ef'};border:1px solid ${S.incSort===b.k?ac:'#e8e4de'};color:${S.incSort===b.k?'#fff':'#9b9794'}">${b.l}</button>`).join('')}
         </div>`:''}
       </div>
       <div ondragover="dOver(event)" ondrop="dDropZone(event,'inc')" data-dropzone="inc" style="min-height:40px">
         ${S.tL&&!tasks.length?skeletons:rTaskList(sortedInc,ac,false)}
-      </div>
-      <!-- Drop 섹션 -->
-      <div style="margin-top:14px">
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
-          <span style="width:3px;height:14px;border-radius:2px;background:#f59e0b;display:inline-block"></span>
-          <span style="font-size:12px;font-weight:800;color:#1c1a17">Drop</span>
-          ${dropItems.length?`<span style="font-size:10px;background:#f59e0b18;color:#f59e0b;border-radius:8px;padding:2px 7px;font-weight:700">${dropItems.length}</span>`:''}
-        </div>
-        <div ondragover="dOver(event)" ondrop="dDropZone(event,'drop')" data-dropzone="drop" style="min-height:50px;background:#fefce8;border:1.5px dashed #fde68a;border-radius:10px;padding:8px;transition:background .15s">
-          ${dropItems.length?dropItems.map(t=>tRow(t,ac,false)).join(''):`<div style="text-align:center;padding:14px 0">
-            <div style="font-size:11px;color:#ca8a04">미완료 카드를 여기로 드래그</div>
-          </div>`}
-        </div>
       </div>
     </div>
     <!-- 중간: 추가 -->

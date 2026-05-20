@@ -91,3 +91,12 @@
 - 남은 위험: Codex 앱 자체 훅이 아니라 프로젝트 지침 기반 운영 규칙이므로, 향후 세션의 에이전트가 이 지침을 읽고 준수해야 한다.
 - 관련 파일: `AGENTS.md`, `knowledge/index.json`
 - 다음 작업: 이후 파일 변경 작업부터 자동 로컬 커밋 여부를 최종 보고에 포함한다.
+
+## 2026-05-20 - Performance Drop section removal
+
+- 목적: 퍼포먼스 팀 미완료 컬럼 아래의 Drop 섹션을 제거한다.
+- 변경: `rPerformanceLayout()`에서 Drop 섹션 렌더링과 Drop 전용 필터를 제거하고, `currentIncIds()`가 미완료 전체를 기준으로 수동 정렬을 계산하도록 조정했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, `git diff --check` PASS, headless Edge 퍼포먼스 화면 smoke PASS(`미완료` 표시, `Drop`/드래그 안내 미표시).
+- 남은 위험: 실제 운영 Notion 데이터가 많은 상태에서의 장시간 사용 검증은 아직 수행하지 않았다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 배포 후 운영 화면에서 퍼포먼스 미완료 컬럼만 보이는지 확인한다.
