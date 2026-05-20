@@ -61,6 +61,7 @@
 
   .team-sel{background:#1F2937;border:1.5px solid #374151;border-radius:var(--np-radius-sm);padding:6px 28px 6px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23D1D5DB'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
   .perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:flex-start}
+  .perf-okr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
   .default-layout{display:flex;gap:20px;align-items:flex-start}
   .default-sidebar{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
   .main-pad{padding:20px 24px 40px}
@@ -77,6 +78,7 @@
   .main-pad>div{min-width:0}
   @media(max-width:768px){
     .perf-grid{grid-template-columns:1fr!important;gap:12px}
+    .perf-okr-grid{grid-template-columns:1fr!important}
     .perf-col-mid{order:-1}
     .default-layout{flex-direction:column!important;gap:12px}
     .default-sidebar{width:100%!important}
@@ -165,6 +167,46 @@ const TS = {
   '유동':{bg:'#f9f8f6',t:'#6b7280',d:'#9ca3af'},
 };
 const US = {'긴급':{bg:'#fef2f2',t:'#b91c1c'},'높음':{bg:'#fffbeb',t:'#b45309'},'보통':{bg:'#f9f8f6',t:'#6b7280'}};
+const PERF_OKR_QUARTERS = {
+  '2026-Q2': {
+    label: '2026 2Q',
+    period: '2026.04 - 2026.06',
+    start: '2026-04-01',
+    end: '2026-06-30',
+    source: '전략수립 / performance_2q_okr_v8',
+    summary: '현재 분기 퍼포먼스 마케팅팀 OKR/KPI',
+    krs: [
+      {
+        id: 'KR #1',
+        title: '한국고려삼 시즌 매출 극대화',
+        owner: '팀 전체',
+        color: '#f59e0b',
+        metrics: ['CRM 매출 1,500만원', '유입 10% · 전환 10%', '전 채널 이터레이션 카드 3개']
+      },
+      {
+        id: 'KR #2',
+        title: '켈리·에디 자기주도 고도화',
+        owner: '켈리 · 에디',
+        color: '#8b5cf6',
+        metrics: ['퍼포먼스 매출/ROAS: 담당자 설정', '이터레이션 120회', '브랜드별 운영·분석·보고 자립']
+      },
+      {
+        id: 'KR #3',
+        title: '웹보드 의사결정 인프라',
+        owner: '크리스토퍼',
+        color: '#2563eb',
+        metrics: ['5월 마지막 주까지 3개 브랜드 + 3팀 지표 완료', '한 화면 즉시 확인', '팀 내 지표 정의 통일']
+      },
+      {
+        id: 'KR #4',
+        title: '하이템프 여름 시즌 검증',
+        owner: '팀 전체',
+        color: '#10b981',
+        metrics: ['6월 말까지 캠페인 사전준비 완료', '메타 · 자사몰 · CRM · 스크립트 · 인스타피드', '여름 시즌 적합성 최종 판정']
+      }
+    ]
+  }
+};
 const D_BRANDS=['한국고려삼','진수성찬','동아오츠카','얼김치','플라이밀','릴릴','히든픽','정식품','건강미식','셀리맥스','VT코스메틱'];
 const D_BRAND_COLOR={'한국고려삼':'#92400e','진수성찬':'#7c3aed','동아오츠카':'#2563eb','얼김치':'#dc2626','플라이밀':'#ec4899','릴릴':'#ea580c','히든픽':'#6b7280','정식품':'#374151','건강미식':'#ca8a04','셀리맥스':'#059669','VT코스메틱':'#2563eb'};
 const D_STATUS=['요청','진행 중','수정 요청','완료'];
@@ -2745,6 +2787,69 @@ function rSched(sched){
   }).join('')+addForm;
 }
 
+function currentQuarterKey(){
+  const n=getKSTNow();
+  return`${n.getUTCFullYear()}-Q${Math.floor(n.getUTCMonth()/3)+1}`;
+}
+function quarterTimeProgress(q){
+  const start=new Date(q.start+'T00:00:00Z').getTime();
+  const end=new Date(q.end+'T23:59:59Z').getTime();
+  const now=new Date(todayStr()+'T12:00:00Z').getTime();
+  if(!start||!end||end<=start)return null;
+  return Math.max(0,Math.min(100,Math.round(((now-start)/(end-start))*100)));
+}
+function rPerformanceOkrSection(){
+  const q=PERF_OKR_QUARTERS[currentQuarterKey()];
+  if(!q)return`<section style="margin-top:16px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="width:3px;height:16px;border-radius:2px;background:#6B7280;display:inline-block;flex-shrink:0"></span>
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#1c1a17">현재 분기 OKR/KPI</div>
+        <div style="font-size:11px;color:#9b9794;margin-top:2px">현재 분기에 연결된 퍼포먼스 마케팅팀 OKR/KPI 자료 없음</div>
+      </div>
+    </div>
+  </section>`;
+  const prog=quarterTimeProgress(q);
+  return`<section style="margin-top:16px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:8px;min-width:0">
+        <span style="width:3px;height:18px;border-radius:2px;background:#e05c1a;display:inline-block;flex-shrink:0;margin-top:2px"></span>
+        <div style="min-width:0">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:800;color:#1c1a17">${esc(q.summary)}</span>
+            <span style="font-size:10px;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;border-radius:999px;padding:2px 7px;font-weight:800">${esc(q.label)}</span>
+          </div>
+          <div style="font-size:11px;color:#9b9794;margin-top:3px">${esc(q.period)} · 출처: ${esc(q.source)}</div>
+        </div>
+      </div>
+      ${prog!==null?`<div style="min-width:150px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:10px;font-weight:800;color:#6b6762">분기 시간 진행</span>
+          <span style="font-size:10px;font-weight:800;color:#e05c1a">${prog}%</span>
+        </div>
+        <div style="height:6px;background:#f3f4f6;border-radius:999px;overflow:hidden">
+          <div style="width:${prog}%;height:100%;background:#e05c1a;border-radius:999px"></div>
+        </div>
+      </div>`:''}
+    </div>
+    <div class="perf-okr-grid">
+      ${q.krs.map(kr=>`<article style="background:#F9FAFB;border:1px solid #D1D5DB;border-radius:8px;padding:10px;min-width:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+          <span style="font-size:9px;font-weight:900;color:${kr.color};background:${kr.color}14;border:1px solid ${kr.color}44;border-radius:999px;padding:2px 7px;white-space:nowrap">${esc(kr.id)}</span>
+          <span style="font-size:9px;font-weight:800;color:#6b6762;white-space:nowrap">${esc(kr.owner)}</span>
+        </div>
+        <div style="font-size:12px;font-weight:800;color:#1c1a17;line-height:1.35;margin-bottom:8px;word-break:keep-all">${esc(kr.title)}</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          ${kr.metrics.map(m=>`<div style="display:flex;align-items:flex-start;gap:6px;font-size:10px;color:#4B5563;line-height:1.45">
+            <span style="width:4px;height:4px;border-radius:50%;background:${kr.color};display:inline-block;flex-shrink:0;margin-top:6px"></span>
+            <span>${esc(m)}</span>
+          </div>`).join('')}
+        </div>
+      </article>`).join('')}
+    </div>
+  </section>`;
+}
+
 /* ══════════════════════════════════════
    퍼포먼스 탭 — 3컬럼 레이아웃
 ══════════════════════════════════════ */
@@ -2806,7 +2911,8 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
 
   const sortedInc=sortInc(inc);
   const sortBtns=[{k:'time',l:'시간순'},{k:'brand',l:'브랜드'},{k:'area',l:'영역'},{k:'manual',l:'수동'}];
-  return`<div class="perf-grid">
+  return`<div>
+  <div class="perf-grid">
     <!-- 좌: 미완료 -->
     <div class="perf-col-inc">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -2839,6 +2945,8 @@ function rPerformanceLayout(inc,dn,sched,ac,isWeekend,tasks){
       </div>
       ${S.tL&&!tasks.length?skeletons:rTaskList(dn,ac,true)}
     </div>
+  </div>
+  ${rPerformanceOkrSection()}
   </div>`;
 }
 

@@ -100,3 +100,13 @@
 - 남은 위험: 실제 운영 Notion 데이터가 많은 상태에서의 장시간 사용 검증은 아직 수행하지 않았다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 배포 후 운영 화면에서 퍼포먼스 미완료 컬럼만 보이는지 확인한다.
+
+## 2026-05-20 - Performance current-quarter OKR/KPI section
+
+- 목적: 퍼포먼스 팀 화면 하단에 현재 분기 퍼포먼스 마케팅팀 OKR/KPI를 한눈에 볼 수 있는 섹션을 추가한다.
+- 근거: `C:\Users\USER\Desktop\전략수립\knowledge\specs\okr_kpi_strategy_spec.md`와 active artifact `artifacts/html/performance_2q_okr_v8.html`에서 2026 Q2 KR/KPI 4개를 확인했다.
+- 변경: `PERF_OKR_QUARTERS`에 2026 Q2 요약 데이터를 추가하고, `rPerformanceOkrSection()`을 통해 퍼포먼스 레이아웃 하단에 4개 KR 카드와 분기 시간 진행률을 표시했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, `git diff --check` PASS, headless Edge desktop/mobile smoke PASS(OKR heading, 2026 2Q badge, KR 4개, no page errors).
+- 남은 위험: KPI 실적 진행률은 아직 실제 데이터와 연결하지 않았고, 현재 섹션은 목표/기준 요약 표시용이다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 운영 데이터와 연결하려면 각 KPI별 실제값 출처와 산식을 별도 정의한다.
