@@ -43,7 +43,7 @@
       "depends_on": ["notion_proxy", "notion_databases", "google_calendar_api", "cloudinary_upload"],
       "used_by": ["end_users"],
       "tests": ["tools/check-js-syntax.mjs"],
-      "last_verified": "2026-05-21: inline script syntax PASS; Performance KR2 brand/domain KPI strategy desktop/mobile headless UI smoke PASS"
+      "last_verified": "2026-05-21: inline script syntax PASS; Performance KR2 role-scoped brand strategy desktop/mobile headless UI smoke PASS"
     },
     "notion_proxy": {
       "path": "netlify/functions/proxy.js",

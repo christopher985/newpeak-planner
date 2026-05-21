@@ -130,3 +130,13 @@
 - 남은 위험: 원본 상세 모달의 모든 긴 설명·내부 모달·상세페이지 목업 전문은 복제하지 않았고, 도메인별 KPI/전략 핵심 문장으로 압축 반영했다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 원본 상세 모달 전체 수준의 깊이가 필요하면 KR2 전용 브랜드별 상세 모달로 분리한다.
+
+## 2026-05-21 - Performance KR2 role-scoped strategy view
+
+- 목적: Christopher는 팀 리더로 켈리·에디 전략 전체를 보되, Kelly와 Eddie는 각자 담당 브랜드 전략만 보게 해 정보 탐색 부담을 줄인다.
+- 변경: KR #2 미시 전략 그룹에 사용자 audience 조건을 추가했다. `Christopher`는 전체 45개, `Kelly`는 얼김치 23개, `Eddie`는 진수성찬 22개만 렌더링한다.
+- 디자인: KR 카드 안에서 `거시 KR 목표` 패널과 `미시 브랜드 전략` 접이식 패널을 분리하고, 미시 전략에는 현재 표시 범위 배지(리더 전체 보기/얼김치만 표시/진수성찬만 표시)를 추가했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, headless Chrome desktop PASS(Christopher/Kelly/Eddie role scope), headless Chrome mobile PASS(Kelly/Eddie role scope).
+- 남은 위험: 현재 역할 판정은 Todo 앱의 선택된 담당자(`S.user`) 기준이며, Notion 권한이나 로그인 계정 권한과 직접 연결된 보안 제어는 아니다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 권한 보안까지 필요하면 서버/Notion 계정 단의 접근 제어 설계를 별도로 한다.
