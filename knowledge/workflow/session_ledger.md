@@ -120,3 +120,13 @@
 - 남은 위험: 하이템프 별도 전략 설계도 전체 HTML은 앱 안에 전문 복제하지 않았고, KR #4 본문에 확인된 타임라인/판단 기준 중심으로 반영했다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 하이템프 전략 설계도 전체를 앱에서 열람해야 하면 별도 상세 모달 또는 외부 링크 섹션으로 분리한다.
+
+## 2026-05-21 - Performance KR2 brand/domain KPI strategy expansion
+
+- 목적: KR #2 켈리·에디 자기주도 고도화 카드에서 거시적 목표만 보이는 문제를 해결하고, 담당 브랜드별 도메인 KPI 전략을 바로 확인 가능하게 한다.
+- 근거: `C:\Users\USER\Desktop\okr-kpi\artifacts\html\performance_2q_okr_v8.html`에 내장된 켈리 얼김치 OKR/KPI 상세와 에디 진수성찬 OKR/KPI 상세를 기준으로 확인했다.
+- 변경: KR #2 설명에서 `추가 예정` 문구를 제거하고, 켈리/얼김치 7개 도메인 22개 세부 KR 및 에디/진수성찬 7개 도메인 21개 세부 KR을 접이식 미시 전략 영역에 추가했다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, `git diff --check` PASS, headless Chrome desktop/mobile smoke PASS(KR2 `미시 전략 45개 보기`, 켈리/에디 도메인 문구, 추가 예정 문구 제거).
+- 남은 위험: 원본 상세 모달의 모든 긴 설명·내부 모달·상세페이지 목업 전문은 복제하지 않았고, 도메인별 KPI/전략 핵심 문장으로 압축 반영했다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 원본 상세 모달 전체 수준의 깊이가 필요하면 KR2 전용 브랜드별 상세 모달로 분리한다.
