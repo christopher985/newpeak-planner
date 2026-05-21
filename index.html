@@ -61,7 +61,7 @@
 
   .team-sel{background:#1F2937;border:1.5px solid #374151;border-radius:var(--np-radius-sm);padding:6px 28px 6px 12px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23D1D5DB'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
   .perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:flex-start}
-  .perf-okr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .perf-okr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .default-layout{display:flex;gap:20px;align-items:flex-start}
   .default-sidebar{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
   .main-pad{padding:20px 24px 40px}
@@ -173,7 +173,7 @@ const PERF_OKR_QUARTERS = {
     period: '2026.04 - 2026.06',
     start: '2026-04-01',
     end: '2026-06-30',
-    source: '전략수립 / performance_2q_okr_v8',
+    source: 'okr-kpi / performance_2q_okr_v8',
     summary: '현재 분기 퍼포먼스 마케팅팀 OKR/KPI',
     krs: [
       {
@@ -181,28 +181,90 @@ const PERF_OKR_QUARTERS = {
         title: '한국고려삼 시즌 매출 극대화',
         owner: '팀 전체',
         color: '#f59e0b',
-        metrics: ['CRM 매출 1,500만원', '유입 10% · 전환 10%', '전 채널 이터레이션 카드 3개']
+        desc: '가정의달은 명절보다 선물 수요가 작은 특성을 고려해, 광고 확장보다 1분기 명절에서 실증한 고효율 채널의 painpoint 개선 중심으로 운영한다.',
+        metrics: ['CRM 매출 1,500만원', '유입 10% · 전환 10%', '전 채널 이터레이션 카드 3개'],
+        groups: [
+          {title:'전략 방향',items:[
+            {title:'채널별 전략 수립',desc:'자사몰 / CRM / 메타캠페인 / GFA·검색광고 / 브랜드커넥트 / MG&PA 채널별 실행 방향.'},
+            {title:'구독 상품 기획',desc:'반복 구매 유도를 위한 구독 상품 오퍼 구조 설계 및 랜딩 세팅.'}
+          ]},
+          {title:'전제 조건',items:[
+            {title:'가정의달 타겟 오디언스 설득 메시지 확립',desc:'채널 집행 전, 핵심 구매 타겟별 설득 메시지 및 오퍼 구조 사전 확정.'},
+            {title:'MG+PA 인플루언서 섭외',desc:'조회수 + 소통력 + 과거 공구 전환율 3요소 정량 기준으로 사전 선정 완료.'}
+          ]},
+          {title:'채널별 실행',items:[
+            {title:'자사몰: 상세페이지 이탈률 개선',desc:'캠페인 집행 전 상세페이지 전환율 병목 점검 및 Above the fold 구성 개선.'},
+            {title:'자사몰: 가정의달 배너 제작',desc:'가정의달 시즌 배너 소재 제작 및 적용.'},
+            {title:'스마트스토어: SEO 상품세팅',desc:'스마트스토어 상품 SEO 최적화 세팅. 키워드·상품명·태그 정비.'},
+            {title:'스마트스토어: 가정의달 배너 제작',desc:'가정의달 시즌 배너 소재 제작 및 스마트스토어 적용.'},
+            {title:'스마트스토어: 리뷰 이벤트 배너',desc:'리뷰 유도 이벤트 배너 세팅 및 노출.'},
+            {title:'CRM: 3회 발송 메시지·이미지 전략',desc:'1분기 실증 ROAS 7,483% 기반. 3회 발송 시퀀스별 메시지 컨셉·이미지 소재 사전 기획.'},
+            {title:'메타캠페인: 전환 2소재 · 리타겟 2소재 세팅',desc:'전환 캠페인 신규 소재 2개 및 리타겟 캠페인 신규 소재 2개 제작·세팅.'},
+            {title:'GFA/검색광고: GFA 전환 소재 2개',desc:'GFA 전환 목적 신규 소재 2개 제작 및 집행 세팅.'},
+            {title:'GFA/검색광고: 검색광고 세팅',desc:'파워링크 크리에이터명 키워드 조합 광고그룹 신규 세팅. 쇼핑검색광고에 스마트스토어 상품 추가 등록.'},
+            {title:'브랜드커넥트: 높은 가격 블로거 3명 세팅',desc:'단가 높은 블로그 계정 3명 선정 및 브랜드커넥트 게시 세팅.'}
+          ]}
+        ]
       },
       {
         id: 'KR #2',
         title: '켈리·에디 자기주도 고도화',
         owner: '켈리 · 에디',
         color: '#8b5cf6',
-        metrics: ['퍼포먼스 매출/ROAS: 담당자 설정', '이터레이션 120회', '브랜드별 운영·분석·보고 자립']
+        desc: '각 담당자가 브랜드 퍼포먼스 마케팅 전 영역을 Claude를 활용해 스스로 운영·분석·보고한다. 영역별 세부 OKR/KPI는 켈리·에디가 직접 수립하여 추가 예정.',
+        metrics: ['퍼포먼스 매출/ROAS: 담당자 설정', '이터레이션 120회', '브랜드별 운영·분석·보고 자립'],
+        groups: [
+          {title:'담당 범위',items:[
+            {title:'켈리: 얼김치 담당',desc:'브랜드 담당 퍼포먼스 전 영역의 운영·분석·보고 자기주도 고도화.'},
+            {title:'에디: 진수성찬 담당',desc:'브랜드 담당 퍼포먼스 전 영역의 운영·분석·보고 자기주도 고도화.'}
+          ]},
+          {title:'성과 측정 지표',items:[
+            {title:'퍼포먼스 ROAS',desc:'서지일 등 외부 유입과 분리된 퍼포먼스 태그 상품 기준. 담당자 통제 가능한 범위 내 ROAS 측정.'},
+            {title:'전분기 대비 재구매율',desc:'F&B 한정. 절대값이 아닌 개선폭 기준이며, 신규 유입 규모 변동 보정 필요.'},
+            {title:'이터레이션 횟수',desc:'합리적 가설 도출 → 집행 → 결과 분석의 완결 사이클 수. 가설 없는 집행·분석 없는 마감은 카운트 제외.'}
+          ]}
+        ]
       },
       {
         id: 'KR #3',
         title: '웹보드 의사결정 인프라',
         owner: '크리스토퍼',
         color: '#2563eb',
-        metrics: ['5월 마지막 주까지 3개 브랜드 + 3팀 지표 완료', '한 화면 즉시 확인', '팀 내 지표 정의 통일']
+        desc: '각 광고 관리자를 개별 접속해야 전체 그림이 보이는 문제를 줄이고, 3개 브랜드 핵심 지표를 한 화면에서 빠르게 확인할 수 있는 구조를 만든다.',
+        metrics: ['5월 마지막 주까지 3개 브랜드 + 3팀 지표 완료', '한 화면 즉시 확인', '팀 내 지표 정의 통일'],
+        groups: [
+          {title:'스프린트 일정',items:[
+            {title:'1~3주: Phase 1',desc:'진수성찬 + 퍼포먼스 지표·운영지표 일부 완료.'},
+            {title:'4~8주: Phase 2·3',desc:'얼김치·한국고려삼 운영 지표, 콘텐츠 마케팅 지표 완료.'}
+          ]},
+          {title:'완성 기준',items:[
+            {title:'3개 브랜드 핵심 지표 즉시 확인 가능',desc:'브랜드 핵심 지표를 화면 이동 없이 빠르게 확인.'},
+            {title:'전 팀원이 독립적으로 열람 가능',desc:'특정 담당자에게 묻지 않고도 현황 확인 가능.'},
+            {title:'지표 정의가 팀 내 통일되어 있음',desc:'같은 지표를 팀원이 같은 의미로 해석하도록 정의 고정.'}
+          ]}
+        ]
       },
       {
         id: 'KR #4',
         title: '하이템프 여름 시즌 검증',
         owner: '팀 전체',
         color: '#10b981',
-        metrics: ['6월 말까지 캠페인 사전준비 완료', '메타 · 자사몰 · CRM · 스크립트 · 인스타피드', '여름 시즌 적합성 최종 판정']
+        desc: '운동 크리에이터 풀을 활용해 소규모 캠페인을 집행하고, 신규 유입 가능성·전환 효율을 데이터로 확인해 여름 시즌 비즈니스 적합성을 판단한다.',
+        metrics: ['6월 말까지 캠페인 사전준비 완료', '메타 · 자사몰 · CRM · 스크립트 · 인스타피드', '여름 시즌 적합성 최종 판정'],
+        groups: [
+          {title:'타임라인',items:[
+            {title:'4~5월',desc:'크리에이터 컨택 + 오퍼 구조 설계.'},
+            {title:'5말',desc:'랜딩 세팅 완료.'},
+            {title:'6월',desc:'캠페인 수행 → 데이터 수집.'},
+            {title:'6말',desc:'결과 분석 → 여름 시즌 비즈니스 적합성 최종 판정.'}
+          ]},
+          {title:'판단 기준',items:[
+            {title:'매출 및 순이익',desc:'캠페인 기간 내 발생 매출 대비 광고비·크리에이터 비용·원가 차감 후 순이익 산출. 손익분기 도달 여부를 1차 적합성 지표로 판단.'},
+            {title:'CPA',desc:'신규 유료 고객 1명 확보에 투입된 총 비용. 광고비 + 크리에이터 MG/PA 기준으로 타 브랜드 CPA 대비 상대 평가.'},
+            {title:'재구매율 낮은 비즈니스 특성 고려',desc:'강의 콘텐츠 특성상 반복 구매율이 식품 대비 구조적으로 낮으므로 신규 고객 전환율·객단가·LTV 추정치를 병행 평가.'},
+            {title:'오디언스 데이터 축적 및 메타광고 운영 가능성',desc:'픽셀 데이터·구매자 풀이 충분한지 확인하고, Meta 유사 타겟·리타겟 캠페인 운영 가능 모수 임계치 도달 여부를 판단.'}
+          ]}
+        ]
       }
     ]
   }
@@ -2798,6 +2860,31 @@ function quarterTimeProgress(q){
   if(!start||!end||end<=start)return null;
   return Math.max(0,Math.min(100,Math.round(((now-start)/(end-start))*100)));
 }
+function okrStrategyCount(kr){
+  return(kr.groups||[]).reduce((n,g)=>n+(g.items?.length||0),0);
+}
+function rOkrDetailGroups(kr){
+  const groups=kr.groups||[];
+  if(!groups.length)return'';
+  const count=okrStrategyCount(kr);
+  return`<details style="margin-top:10px;border-top:1px solid #D1D5DB;padding-top:8px">
+    <summary style="cursor:pointer;font-size:10px;font-weight:900;color:${kr.color};outline:none">미시 전략 ${count}개 보기</summary>
+    <div style="display:flex;flex-direction:column;gap:9px;margin-top:9px">
+      ${groups.map(g=>`<div style="border:1px solid #e5e7eb;border-radius:6px;background:#fff;padding:8px">
+        <div style="font-size:10px;font-weight:900;color:#1c1a17;margin-bottom:6px">${esc(g.title)}</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${g.items.map(item=>`<div style="display:flex;gap:7px;align-items:flex-start">
+            <span style="width:4px;height:4px;border-radius:50%;background:${kr.color};display:inline-block;flex-shrink:0;margin-top:6px"></span>
+            <div style="min-width:0">
+              <div style="font-size:10px;font-weight:800;color:#1c1a17;line-height:1.4">${esc(item.title)}</div>
+              ${item.desc?`<div style="font-size:10px;color:#6b6762;line-height:1.45;margin-top:1px">${esc(item.desc)}</div>`:''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`).join('')}
+    </div>
+  </details>`;
+}
 function rPerformanceOkrSection(){
   const q=PERF_OKR_QUARTERS[currentQuarterKey()];
   if(!q)return`<section style="margin-top:16px;background:#fff;border:1px solid #e8e4de;border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
@@ -2839,12 +2926,14 @@ function rPerformanceOkrSection(){
           <span style="font-size:9px;font-weight:800;color:#6b6762;white-space:nowrap">${esc(kr.owner)}</span>
         </div>
         <div style="font-size:12px;font-weight:800;color:#1c1a17;line-height:1.35;margin-bottom:8px;word-break:keep-all">${esc(kr.title)}</div>
+        ${kr.desc?`<div style="font-size:10px;color:#4B5563;line-height:1.45;margin-bottom:8px">${esc(kr.desc)}</div>`:''}
         <div style="display:flex;flex-direction:column;gap:5px">
           ${kr.metrics.map(m=>`<div style="display:flex;align-items:flex-start;gap:6px;font-size:10px;color:#4B5563;line-height:1.45">
             <span style="width:4px;height:4px;border-radius:50%;background:${kr.color};display:inline-block;flex-shrink:0;margin-top:6px"></span>
             <span>${esc(m)}</span>
           </div>`).join('')}
         </div>
+        ${rOkrDetailGroups(kr)}
       </article>`).join('')}
     </div>
   </section>`;

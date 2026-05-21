@@ -110,3 +110,13 @@
 - 남은 위험: KPI 실적 진행률은 아직 실제 데이터와 연결하지 않았고, 현재 섹션은 목표/기준 요약 표시용이다.
 - 관련 파일: `index.html`, `knowledge/index.json`
 - 다음 작업: 운영 데이터와 연결하려면 각 KPI별 실제값 출처와 산식을 별도 정의한다.
+
+## 2026-05-21 - Performance OKR/KPI micro-strategy expansion
+
+- 목적: 하단 OKR/KPI 섹션에서 거시적 KR뿐 아니라 KR별 미시 실행 전략까지 확인 가능하게 한다.
+- 근거: 현재 바탕화면에는 `전략수립` 폴더 대신 `C:\Users\USER\Desktop\okr-kpi`가 있으며, `artifacts/html/performance_2q_okr_v8.html`의 KR 본문 및 KR #1 채널별 전략 모달을 기준으로 세부 전략을 확인했다.
+- 변경: KR 카드 그리드를 2컬럼으로 조정하고, 각 KR 카드에 `미시 전략 n개 보기` 접이식 영역을 추가했다. KR #1은 전략 방향/전제 조건/채널별 실행까지, KR #2~#4는 확인된 담당 범위·측정 지표·스프린트·판단 기준을 포함한다.
+- 검증: `node tools/check-js-syntax.mjs` PASS, `git diff --check` PASS, headless Edge desktop/mobile smoke PASS(접이식 4개, 세부 전략 문구, no page errors).
+- 남은 위험: 하이템프 별도 전략 설계도 전체 HTML은 앱 안에 전문 복제하지 않았고, KR #4 본문에 확인된 타임라인/판단 기준 중심으로 반영했다.
+- 관련 파일: `index.html`, `knowledge/index.json`
+- 다음 작업: 하이템프 전략 설계도 전체를 앱에서 열람해야 하면 별도 상세 모달 또는 외부 링크 섹션으로 분리한다.
